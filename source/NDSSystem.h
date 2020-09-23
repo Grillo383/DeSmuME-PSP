@@ -173,64 +173,66 @@ enum NDS_CONSOLE_TYPE
 
 struct NDSSystem
 {
-	s32 wifiCycle;
-	s32 cycles;
-	u64 timerCycle[2][4];
-	u32 VCount;
-	u32 old;
 
-	//raw adc touch coords for old NDS
-	u16 adc_touchX;
-	u16 adc_touchY;
-	s32 adc_jitterctr;
+	//whether the console is using our faked-bootup process
+	BOOL isFakeBooted;
+	BOOL isTouch;
+	BOOL sleeping;
 	BOOL stylusJitter;
+	BOOL cardEjected;
+
+	//set if the user requests ensata emulation
+	BOOL ensataEmulation;
+
+	BOOL _DebugConsole;
 
 	//the DSI returns calibrated touch coords from its TSC (?), so we need to save these separately
 	u16 scr_touchX;
 	u16 scr_touchY;
 
-	//whether the console is using our faked-bootup process
-	BOOL isFakeBooted;
-	
-	BOOL isTouch;
 	u16 pad;
-	
 	u16 paddle;
 
-	u8 *FW_ARM9BootCode;
-	u8 *FW_ARM7BootCode;
+	//raw adc touch coords for old NDS
+	u16 adc_touchX;
+	u16 adc_touchY;
+
+	//console type must be copied in when the system boots. it can't be changed on the fly.
+	int ConsoleType;
+
+	s32 adc_jitterctr;
+	s32 wifiCycle;
+	s32 cycles;
+	u32 VCount;
+	u32 old;
+
 	u32 FW_ARM9BootCodeAddr;
 	u32 FW_ARM7BootCodeAddr;
 	u32 FW_ARM9BootCodeSize;
 	u32 FW_ARM7BootCodeSize;
 
-	BOOL sleeping;
-	BOOL cardEjected;
-	u32 freezeBus;
-
-	//this is not essential NDS runtime state.
-	//it was perhaps a mistake to put it here.
-	//it is far less important than the above.
-	//maybe I should move it.
-	s32 idleCycles[2];
-	s32 runCycleCollector[2][16];
 	s32 idleFrameCounter;
 	s32 cpuloopIterationCount; //counts the number of times during a frame that a reschedule happened
 
-	//console type must be copied in when the system boots. it can't be changed on the fly.
-	int ConsoleType;
-	bool Is_DSI() { return ConsoleType == NDS_CONSOLE_TYPE_DSI; }
-	bool Is_DebugConsole() { return _DebugConsole!=0; }
-	BOOL _DebugConsole;
-	
-	//set if the user requests ensata emulation
-	BOOL ensataEmulation;
+	u32 freezeBus;
 
 	//there is a hack in the ipc sync for ensata. this tracks its state
 	u32 ensataIpcSyncCounter;
 
 	//maintains the state of the ensata handshaking protocol
 	u32 ensataHandshake;
+
+	s32 idleCycles[2];
+	s32 runCycleCollector[2][16];
+
+	u8* FW_ARM9BootCode;
+	u8* FW_ARM7BootCode;
+
+	u64 timerCycle[2][4];
+
+
+	bool Is_DSI() { return ConsoleType == NDS_CONSOLE_TYPE_DSI; }
+	bool Is_DebugConsole() { return _DebugConsole!=0; }
 
 	struct {
 		u8 lcd, gpuMain, gfx3d_render, gfx3d_geometry, gpuSub, dispswap;
@@ -247,11 +249,11 @@ struct NDSSystem
 /** /brief A touchscreen calibration point.
  */
 struct NDS_fw_touchscreen_cal {
-  u16 adc_x;
-  u16 adc_y;
-
   u8 screen_x;
   u8 screen_y;
+
+  u16 adc_x;
+  u16 adc_y;
 };
 
 #define MAX_FW_NICKNAME_LENGTH 10
@@ -265,14 +267,14 @@ struct NDS_fw_config_data
   u8 birth_month;
   u8 birth_day;
 
-  u16 nickname[MAX_FW_NICKNAME_LENGTH];
   u8 nickname_len;
-
-  u16 message[MAX_FW_MESSAGE_LENGTH];
   u8 message_len;
 
   u8 language;
 
+  u16 nickname[MAX_FW_NICKNAME_LENGTH];
+  u16 message[MAX_FW_MESSAGE_LENGTH];
+  
   //touchscreen calibration
   NDS_fw_touchscreen_cal touch_cal[2];
 };
@@ -325,7 +327,7 @@ struct GameInfo
 	u32 lastReadPos;
 	u32	romType;
 	u32 headerOffset;
-	char ROMserial[20];
+	char ROMserial[35];
 	char ROMname[20];
 	bool _isDSiEnhanced;
 	NDS_header header;
@@ -492,7 +494,7 @@ extern struct TCommonSettings {
 		, GFX3D_Fog(false)
 
 		, GFX3D_Texture(true)
-		, GFX3D_LineHack(true)
+		, GFX3D_LineHack(false)
 		, GFX3D_Zelda_Shadow_Depth_Hack(0)
 		, GFX3D_Renderer_Multisample(false)
 		, GFX3D_TXTHack(false)
@@ -536,7 +538,7 @@ extern struct TCommonSettings {
 		, backupSave(false)
 
 		//HCF Let's test Sync sound
-		, SPU_sync_mode(1)
+		, SPU_sync_mode(0)
 		//, SPU_sync_mode(0)
 
 		, SPU_sync_method(0)
@@ -572,23 +574,18 @@ extern struct TCommonSettings {
 	bool GFX3D_Fog;
 	bool GFX3D_Texture;
 	bool GFX3D_LineHack;
-	int  GFX3D_Zelda_Shadow_Depth_Hack;
 	bool GFX3D_Renderer_Multisample;
 	bool GFX3D_TXTHack;
 
 	bool loadToMemory;
 
 	bool UseExtBIOS;
-	char ARM9BIOS[256];
-	char ARM7BIOS[256];
 	bool SWIFromBIOS;
 	bool PatchSWI3;
 
 	bool UseExtFirmware;
 	bool UseExtFirmwareSettings;
-	char Firmware[256];
 	bool BootFromFirmware;
-	NDS_fw_config_data fw_config;
 
 	NDS_CONSOLE_TYPE ConsoleType;
 	bool DebugConsole;
@@ -596,19 +593,29 @@ extern struct TCommonSettings {
 	
 	bool cheatsDisable;
 
-	int num_cores;
 	bool single_core() { return num_cores==1; }
 	bool rigorous_timing;
 
-	int StylusPressure;
 	bool StylusJitter;
 
-	bool dispLayers[2][5];
-	
 	bool advanced_timing;
 
 	bool use_jit;
+
+	bool dispLayers[2][5];
+
+	char ARM9BIOS[256];
+	char ARM7BIOS[256];
+	char Firmware[256];
+
+	int  GFX3D_Zelda_Shadow_Depth_Hack;
+	
+	int num_cores;
+	int StylusPressure;
+	
 	u32	jit_max_block_size;
+
+	NDS_fw_config_data fw_config;
 	
 	struct _Wifi {
 		int mode;

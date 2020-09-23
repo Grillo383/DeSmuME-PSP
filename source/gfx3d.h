@@ -24,6 +24,7 @@
 #include <istream>
 
 #include "types.h"
+#include "PSP/FrontEnd.h"
 
 class EMUFILE;
 
@@ -221,13 +222,11 @@ void gfx3d_reset();
 
 typedef struct
 {
-	u8		enableLightFlags;
 	bool	enableLight0;
 	bool	enableLight1;
 	bool	enableLight2;
 	bool	enableLight3;
-	u8		polygonMode;
-	u8		surfaceCullingMode;
+
 	bool	enableRenderBackSurface;
 	bool	enableRenderFrontSurface;
 	bool	enableAlphaDepthWrite;
@@ -238,28 +237,34 @@ typedef struct
 	bool	isWireframe;
 	bool	isOpaque;
 	bool	isTranslucent;
+
+	u8		enableLightFlags;
+	u8		polygonMode;
+	u8		surfaceCullingMode;
 	u8		alpha;
 	u8		polygonID;
 } PolygonAttributes;
 
 typedef struct
 {
-	u16		VRAMOffset;
 	bool	enableRepeatS;
 	bool	enableRepeatT;
 	bool	enableMirroredRepeatS;
 	bool	enableMirroredRepeatT;
+	bool	enableTransparentColor0;
+
 	u8		sizeS;
 	u8		sizeT;
 	u8		texFormat;
-	bool	enableTransparentColor0;
 	u8		coordTransformMode;
+
+	u16		VRAMOffset;
 } PolygonTexParams;
 
 struct POLY {
-	int type; //tri or quad
 	u8 vtxFormat;
 	u16 vertIndexes[4]; //up to four verts can be referenced by this poly
+	int type; //tri or quad
 	u32 polyAttr, texParam, texPalette; //the hardware rendering params
 	u32 viewport;
 	float miny, maxy;
@@ -486,13 +491,13 @@ struct POLY {
 };
 
 //HCF PSP
-#define POLYLIST_SIZE (64)
-//#define POLYLIST_SIZE 8192
+//#define POLYLIST_SIZE 100000
+#define POLYLIST_SIZE 3000
 
 
 struct POLYLIST {
-	POLY list[POLYLIST_SIZE];
 	int count;
+	POLY list[POLYLIST_SIZE];
 };
 
 //just a vert with a 4 float position
@@ -558,13 +563,13 @@ struct VERT {
 };
 
 //HCF PSP
-#define VERTLIST_SIZE (192)
-//#define VERTLIST_SIZE 24576
+//#define VERTLIST_SIZE 100000
+#define VERTLIST_SIZE 12000
 
 
 struct VERTLIST {
-	VERT list[VERTLIST_SIZE];
 	int count;
+	VERT list[VERTLIST_SIZE];
 };
 
 struct INDEXLIST {
@@ -598,8 +603,8 @@ public:
 
 	//the output of clipping operations goes into here.
 	//be sure you init it before clipping!
-	TClippedPoly *clippedPolys;
 	int clippedPolyCounter;
+	TClippedPoly * clippedPolys;
 	void reset() { clippedPolyCounter=0; }
 
 private:
@@ -615,7 +620,7 @@ struct GFX3D_State
 	GFX3D_State()
 		: enableTexturing(true)
 		, enableAlphaTest(true)
-		, enableAlphaBlending(true)
+		, enableAlphaBlending(false)
 		, enableAntialiasing(false)
 		, enableEdgeMarking(false)
 		, enableClearImage(false)
@@ -642,17 +647,21 @@ struct GFX3D_State
 	BOOL enableTexturing, enableAlphaTest, enableAlphaBlending, 
 		enableAntialiasing, enableEdgeMarking, enableClearImage, enableFog, enableFogAlphaOnly;
 
-	static const u32 TOON = 0;
-	static const u32 HIGHLIGHT = 1;
-	u32 shading;
-
 	BOOL wbuffer, sortmode;
+
+	bool invalidateToon;
+	
 	u8 alphaTestRef;
 	u32 activeFlushCommand;
 	u32 pendingFlushCommand;
 
 	u32 clearDepth;
 	u32 clearColor;
+
+	static const u32 TOON = 0;
+	static const u32 HIGHLIGHT = 1;
+	u32 shading;
+
 	#include "PACKED.h"
 	struct {
 		u32 fogColor;
@@ -662,7 +671,6 @@ struct GFX3D_State
 	u32 fogOffset;
 	u32 fogShift;
 
-	bool invalidateToon;
 	u16 u16ToonTable[32];
 	u8 shininessTable[128];
 };
@@ -687,6 +695,13 @@ struct GFX3D
 		, frameCtrRaw(0) {
 	}
 
+	//ticks every time flush() is called
+	int frameCtr;
+	size_t vertListCount;
+
+	//you can use this to track how many real frames passed, for comparing to frameCtr;
+	int frameCtrRaw;
+
 	//currently set values
 	GFX3D_State state;
 
@@ -696,12 +711,6 @@ struct GFX3D
 	POLYLIST* polylist;
 	VERTLIST* vertlist;
 	INDEXLIST indexlist;
-
-	//ticks every time flush() is called
-	int frameCtr;
-
-	//you can use this to track how many real frames passed, for comparing to frameCtr;
-	int frameCtrRaw;
 };
 extern GFX3D gfx3d;
 
@@ -720,7 +729,6 @@ extern CACHE_ALIGN const u8 material_3bit_to_8bit[8];
 
 //these contain the 3d framebuffer converted into the most useful format
 //they are stored here instead of in the renderers in order to consolidate the buffers
-extern CACHE_ALIGN u8 gfx3d_convertedScreen[GFX3D_FRAMEBUFFER_WIDTH*GFX3D_FRAMEBUFFER_HEIGHT*4];
 extern CACHE_ALIGN u8 gfx3d_convertedAlpha[GFX3D_FRAMEBUFFER_WIDTH*GFX3D_FRAMEBUFFER_HEIGHT*2]; //see cpp for explanation of illogical *2
 
 extern BOOL isSwapBuffers;

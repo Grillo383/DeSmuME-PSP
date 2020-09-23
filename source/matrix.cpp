@@ -23,6 +23,9 @@
 #include <assert.h>
 #include "matrix.h"
 #include "MMU.h"
+#include "pspmath.h"
+
+#include <oslib/oslib.h>
 
 void _NOSSE_MatrixMultVec4x4 (const float *matrix, float *vecPtr)
 {
@@ -35,6 +38,17 @@ void _NOSSE_MatrixMultVec4x4 (const float *matrix, float *vecPtr)
 	vecPtr[1] = x * matrix[1] + y * matrix[5] + z * matrix[ 9] + w * matrix[13];
 	vecPtr[2] = x * matrix[2] + y * matrix[6] + z * matrix[10] + w * matrix[14];
 	vecPtr[3] = x * matrix[3] + y * matrix[7] + z * matrix[11] + w * matrix[15];
+
+	/*ScePspFVector4 tmp = { vecPtr[0], vecPtr[1], vecPtr[2], vecPtr[3] };
+
+	vfpu_transform_vector((ScePspFMatrix4*)matrix, &tmp, (ScePspFVector4*)vecPtr);*/
+
+	/*for(int y = 0; y < 4; y++){
+		for(int x = 0; x < 4; x++)	
+			std::cout << matrix[(y*4)+x] << " ";
+		std::cout<<std::endl;
+	}	
+	std::cout<<"______NOSS_____"<<std::endl;*/
 }
 
 void MatrixMultVec4x4 (const s32 *matrix, s32 *vecPtr)
@@ -48,6 +62,13 @@ void MatrixMultVec4x4 (const s32 *matrix, s32 *vecPtr)
 	vecPtr[1] = fx32_shiftdown(fx32_mul(x,matrix[1]) + fx32_mul(y,matrix[5]) + fx32_mul(z,matrix[ 9]) + fx32_mul(w,matrix[13]));
 	vecPtr[2] = fx32_shiftdown(fx32_mul(x,matrix[2]) + fx32_mul(y,matrix[6]) + fx32_mul(z,matrix[10]) + fx32_mul(w,matrix[14]));
 	vecPtr[3] = fx32_shiftdown(fx32_mul(x,matrix[3]) + fx32_mul(y,matrix[7]) + fx32_mul(z,matrix[11]) + fx32_mul(w,matrix[15]));
+
+	/*for(int y = 0; y < 4; y++){
+		for(int x = 0; x < 4; x++)	
+			std::cout << matrix[(y*4)+x] << " ";
+		std::cout<<std::endl;
+	}	
+	std::cout<<"______NORM_____"<<std::endl;*/
 }
 
 void MatrixMultVec3x3_fixed(const s32 *matrix, s32 *vecPtr)
@@ -105,15 +126,23 @@ void MatrixMultiply (float *matrix, const float *rightMatrix)
 	tmpMatrix[14] = (matrix[2]*rightMatrix[12])+(matrix[6]*rightMatrix[13])+(matrix[10]*rightMatrix[14])+(matrix[14]*rightMatrix[15]);
 	tmpMatrix[15] = (matrix[3]*rightMatrix[12])+(matrix[7]*rightMatrix[13])+(matrix[11]*rightMatrix[14])+(matrix[15]*rightMatrix[15]);
 
-	memcpy (matrix, tmpMatrix, sizeof(float)*16);
+	memcpy(matrix, tmpMatrix, sizeof(float)*16);
+
+	//vfpu_quaternion_multiply((ScePspQuatMatrix*)tmpMatrix, (ScePspQuatMatrix*)matrix, (ScePspQuatMatrix*)rightMatrix);
+
+	memcpy(matrix, tmpMatrix, sizeof(float) * 16);
 }
 
 void MatrixTranslate	(float *matrix, const float *ptr)
 {
-	matrix[12] += (matrix[0]*ptr[0])+(matrix[4]*ptr[1])+(matrix[ 8]*ptr[2]);
-	matrix[13] += (matrix[1]*ptr[0])+(matrix[5]*ptr[1])+(matrix[ 9]*ptr[2]);
-	matrix[14] += (matrix[2]*ptr[0])+(matrix[6]*ptr[1])+(matrix[10]*ptr[2]);
-	matrix[15] += (matrix[3]*ptr[0])+(matrix[7]*ptr[1])+(matrix[11]*ptr[2]);
+	
+		matrix[12] += (matrix[0]*ptr[0])+(matrix[4]*ptr[1])+(matrix[ 8]*ptr[2]);
+		matrix[13] += (matrix[1]*ptr[0])+(matrix[5]*ptr[1])+(matrix[ 9]*ptr[2]);
+		matrix[14] += (matrix[2]*ptr[0])+(matrix[6]*ptr[1])+(matrix[10]*ptr[2]);
+		matrix[15] += (matrix[3]*ptr[0])+(matrix[7]*ptr[1])+(matrix[11]*ptr[2]);
+
+
+	//vfpu_translate_matrix((ScePspFMatrix4*)matrix, ptr[0], ptr[1], ptr[2]);
 }
 
 void MatrixScale (float *matrix, const float *ptr)

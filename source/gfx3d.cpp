@@ -249,7 +249,7 @@ using std::max;
 using std::min;
 
 GFX3D gfx3d;
-Viewer3d_State* viewer3d_state = NULL;
+//Viewer3d_State* viewer3d_state = NULL;
 static GFX3D_Clipper boxtestClipper;
 
 //tables that are provided to anyone
@@ -299,16 +299,19 @@ CACHE_ALIGN const u8 material_3bit_to_6bit[] = {
 	0, 8, 16, 26, 34, 44, 52, 63
 };
 
+//Xiro: Better to cache this to improve a bit 3d emulation
+CACHE_ALIGN static u32 _3DLineAddr[192];
+
 //private acceleration tables
 static float float16table[65536];
 static float float10Table[1024];
 static float float10RelTable[1024];
 static float normalTable[1024];
 
-#define fix2float(v)    (((float)((s32)(v))) / (float)(1<<12))
-#define fix10_2float(v) (((float)((s32)(v))) / (float)(1<<9))
+#define fix2float(v)    ((float)(((s32)(v)) >> 12))
+#define fix10_2float(v) ((float)(((s32)(v)) >> 9))
 
-CACHE_ALIGN u8 gfx3d_convertedScreen[GFX3D_FRAMEBUFFER_WIDTH*GFX3D_FRAMEBUFFER_HEIGHT*4];
+//u8 gfx3d_convertedScreen[GFX3D_FRAMEBUFFER_WIDTH*GFX3D_FRAMEBUFFER_HEIGHT*4];
 
 // Matrix stack handling
 CACHE_ALIGN MatrixStack	mtxStack[4] = {
@@ -385,6 +388,7 @@ static u32 lightMask=0;
 static int texCoordinateTransform = 0;
 static CACHE_ALIGN s32 cacheLightDirection[4][4];
 static CACHE_ALIGN s32 cacheHalfVector[4][4];
+static const u32 NOTEXTURE_FLAG = (7 << 26);
 //------------------
 
 #define RENDER_FRONT_SURFACE 0x80
@@ -447,7 +451,7 @@ static void makeTables() {
 		float16table[i] = fix2float((signed short)i);
 
 	for (int i = 0; i < 1024; i++)
-		float10Table[i] = ((signed short)(i<<6)) / (float)(1<<12);
+		float10Table[i] = ((signed short)(i<<6)) / (float)(4096/*1<<12*/);
 
 	for (int i = 0; i < 1024; i++)
 		float10RelTable[i] = ((signed short)(i<<6)) / (float)(1<<18);
@@ -461,6 +465,10 @@ static void makeTables() {
 				int temp = (r*a + oldr*(31-a)) / 31;
 				mixTable555[a][r][oldr] = temp;
 			}
+
+	for (int i = 0;i < 192;i++) {
+		_3DLineAddr[i] = i << 10;
+	}
 }
 
 #define OSWRITE(x) os->fwrite((char*)&(x),sizeof((x)));
@@ -550,8 +558,8 @@ void gfx3d_reset()
 #endif
 
 	reconstruct(&gfx3d);
-	delete viewer3d_state;
-	viewer3d_state = new Viewer3d_State();
+	/*delete viewer3d_state;
+	viewer3d_state = new Viewer3d_State();*/
 	
 	gxf_hardware.reset();
 
@@ -613,7 +621,7 @@ void gfx3d_reset()
 	last_s = 0;
 	viewport = 0xBFFF0000;
 
-	memset(gfx3d_convertedScreen,0,sizeof(gfx3d_convertedScreen));
+	//memset(gfx3d_convertedScreen,0,sizeof(gfx3d_convertedScreen));
 
 	gfx3d.state.clearDepth = DS_DEPTH15TO24(0x7FFF);
 	
@@ -652,7 +660,7 @@ static void SetVertex()
 		s16coord[2]
 	};
 
-	ALIGN(16) s32 coordTransformed[4] = { coord[0], coord[1], coord[2], (1<<12) };
+	ALIGN(16) s32 coordTransformed[4] = { coord[0], coord[1], coord[2], (4096/*1<<12*/) };
 
 	if (texCoordinateTransform == 3)
 	{
@@ -807,7 +815,7 @@ static void SetVertex()
 
 			// Line segment detect
 			// Tested" Castlevania POR - warp stone, trajectory of ricochet, "Eye of Decay"
-			if (!(textureFormat & (7 << 26)))	// no texture
+			if (!(textureFormat & NOTEXTURE_FLAG))	// no texture
 			{
 				bool duplicated = false;
 				VERT &vert0 = vertlist->list[poly.vertIndexes[0]];
@@ -1040,7 +1048,7 @@ static BOOL gfx3d_glLoadMatrix4x3(s32 v)
 
 	//fill in the unusued matrix values
 	mtxCurrent[mode][3] = mtxCurrent[mode][7] = mtxCurrent[mode][11] = 0;
-	mtxCurrent[mode][15] = (1<<12);
+	mtxCurrent[mode][15] = (4096/*1<<12*/);
 
 	GFX_DELAY(30);
 
@@ -1091,7 +1099,7 @@ static BOOL gfx3d_glMultMatrix4x3(s32 v)
 
 	//fill in the unusued matrix values
 	mtxTemporal[3] = mtxTemporal[7] = mtxTemporal[11] = 0;
-	mtxTemporal[15] = 1<<12;
+	mtxTemporal[15] = 4096/*1<<12*/;
 
 	MatrixMultiply (mtxCurrent[mode], mtxTemporal);
 
@@ -1124,7 +1132,7 @@ static BOOL gfx3d_glMultMatrix3x3(s32 v)
 
 	//fill in the unusued matrix values
 	mtxTemporal[3] = mtxTemporal[7] = mtxTemporal[11] = 0;
-	mtxTemporal[15] = 1<<12;
+	mtxTemporal[15] = 4096/*1<<12*/;
 	mtxTemporal[12] = mtxTemporal[13] = mtxTemporal[14] = 0;
 
 	MatrixMultiply (mtxCurrent[mode], mtxTemporal);
@@ -1203,7 +1211,7 @@ static void gfx3d_glNormal(s32 v)
 	s16 ny = ((v<<12)>>22)<<3;
 	s16 nz = ((v<<2)>>22)<<3;
 
-	CACHE_ALIGN s32 normal[4] =  { nx,ny,nz,(1<<12) };
+	CACHE_ALIGN s32 normal[4] =  { nx,ny,nz,(4096/*1<<12*/) };
 
 	if (texCoordinateTransform == 2)
 	{
@@ -1308,10 +1316,10 @@ static void gfx3d_glNormal(s32 v)
 	}
 
 	GFX_DELAY(9);
-	GFX_DELAY_M2((lightMask) & 0x01);
-	GFX_DELAY_M2((lightMask>>1) & 0x01);
-	GFX_DELAY_M2((lightMask>>2) & 0x01);
-	GFX_DELAY_M2((lightMask>>3) & 0x01);
+	GFX_DELAY_M2(/*(lightMask) & 0x01*/);
+	GFX_DELAY_M2(/*(lightMask>>1) & 0x01*/);
+	GFX_DELAY_M2(/*(lightMask>>2) & 0x01*/);
+	GFX_DELAY_M2(/*(lightMask>>3) & 0x01*/);
 }
 
 static void gfx3d_glTexCoord(s32 val)
@@ -1512,8 +1520,10 @@ static BOOL gfx3d_glBoxTest(u32 v)
 	MMU_new.gxstat.tr = 0;		// clear boxtest bit
 	MMU_new.gxstat.tb = 1;		// busy
 
-	BTcoords[BTind++] = v & 0xFFFF;
-	BTcoords[BTind++] = v >> 16;
+	//BTcoords[BTind++] = v & 0xFFFF;
+	//BTcoords[BTind++] = v >> 16;
+
+	BTind++;BTind++;
 
 	if (BTind < 5) return FALSE;
 	BTind = 0;
@@ -1537,7 +1547,7 @@ static BOOL gfx3d_glBoxTest(u32 v)
 	//nanostray title, ff4, ice age 3 depend on this and work
 	//garfields nightmare and strawberry shortcake DO DEPEND on the overflow behavior.
 
-	u16 ux = BTcoords[0];
+	/*u16 ux = BTcoords[0];
 	u16 uy = BTcoords[1];
 	u16 uz = BTcoords[2];
 	u16 uw = BTcoords[3];
@@ -1602,7 +1612,7 @@ static BOOL gfx3d_glBoxTest(u32 v)
 	////---------------------
 
 	//transform all coords
-	for(int i=0;i<8;i++)
+	/*for(int i=0;i<8;i++)
 	{
 		//this cant work. its left as a reminder that we could (and probably should) do the boxtest in all fixed point values
 		//MatrixMultVec4x4_M2(mtxCurrent[0], verts[i].coord);
@@ -1615,10 +1625,10 @@ static BOOL gfx3d_glBoxTest(u32 v)
 
 		_NOSSE_MatrixMultVec4x4(temp1,verts[i].coord);
 		_NOSSE_MatrixMultVec4x4(temp0,verts[i].coord);
-	}
+	}*/
 
 	//clip each poly
-	for(int i=0;i<6;i++) 
+	/*for(int i=0;i<6;i++) 
 	{
 		POLY* poly = &polys[i];
 		VERT* vertTable[4] = {
@@ -1641,7 +1651,11 @@ static BOOL gfx3d_glBoxTest(u32 v)
 	if(MMU_new.gxstat.tr == 0)
 	{
 		//printf("%06d FAIL %d\n",boxcounter,gxFIFO.size);
-	}
+	}*/
+
+	//Xiro 22/09/2020
+	//Yeah I know this is cheating, but now we need speed and maybe this could help a bit..
+	MMU_new.gxstat.tr = 1;
 	
 	return TRUE;
 }
@@ -1654,19 +1668,23 @@ static BOOL gfx3d_glPosTest(u32 v)
 	//printf("POSTEST\n");
 	MMU_new.gxstat.tb = 1;
 
-	PTcoords[PTind++] = float16table[v & 0xFFFF];
-	PTcoords[PTind++] = float16table[v >> 16];
+	//Xiro 22/09/2020
+	//Bypass this now
+
+	//PTcoords[PTind++] = float16table[v & 0xFFFF];
+	//PTcoords[PTind++] = float16table[v >> 16];
+	PTind++;PTind++;
 
 	if (PTind < 3) return FALSE;
 	PTind = 0;
 	
-	PTcoords[3] = 1.0f;
+	/*PTcoords[3] = 1.0f;
 
 	CACHE_ALIGN float temp1[16] = {mtxCurrent[1][0]/4096.0f,mtxCurrent[1][1]/4096.0f,mtxCurrent[1][2]/4096.0f,mtxCurrent[1][3]/4096.0f,mtxCurrent[1][4]/4096.0f,mtxCurrent[1][5]/4096.0f,mtxCurrent[1][6]/4096.0f,mtxCurrent[1][7]/4096.0f,mtxCurrent[1][8]/4096.0f,mtxCurrent[1][9]/4096.0f,mtxCurrent[1][10]/4096.0f,mtxCurrent[1][11]/4096.0f,mtxCurrent[1][12]/4096.0f,mtxCurrent[1][13]/4096.0f,mtxCurrent[1][14]/4096.0f,mtxCurrent[1][15]/4096.0f};
 	CACHE_ALIGN float temp0[16] = {mtxCurrent[0][0]/4096.0f,mtxCurrent[0][1]/4096.0f,mtxCurrent[0][2]/4096.0f,mtxCurrent[0][3]/4096.0f,mtxCurrent[0][4]/4096.0f,mtxCurrent[0][5]/4096.0f,mtxCurrent[0][6]/4096.0f,mtxCurrent[0][7]/4096.0f,mtxCurrent[0][8]/4096.0f,mtxCurrent[0][9]/4096.0f,mtxCurrent[0][10]/4096.0f,mtxCurrent[0][11]/4096.0f,mtxCurrent[0][12]/4096.0f,mtxCurrent[0][13]/4096.0f,mtxCurrent[0][14]/4096.0f,mtxCurrent[0][15]/4096.0f};
 
 	MatrixMultVec4x4(temp1, PTcoords);
-	MatrixMultVec4x4(temp0, PTcoords);
+	MatrixMultVec4x4(temp0, PTcoords);*/
 
 	MMU_new.gxstat.tb = 0;
 
@@ -1689,8 +1707,8 @@ static void gfx3d_glVecTest(u32 v)
 						normalTable[(v>>20)&1023],
 						0};
 
-	CACHE_ALIGN float temp[16] = {mtxCurrent[2][0]/4096.0f,mtxCurrent[2][1]/4096.0f,mtxCurrent[2][2]/4096.0f,mtxCurrent[2][3]/4096.0f,mtxCurrent[2][4]/4096.0f,mtxCurrent[2][5]/4096.0f,mtxCurrent[2][6]/4096.0f,mtxCurrent[2][7]/4096.0f,mtxCurrent[2][8]/4096.0f,mtxCurrent[2][9]/4096.0f,mtxCurrent[2][10]/4096.0f,mtxCurrent[2][11]/4096.0f,mtxCurrent[2][12]/4096.0f,mtxCurrent[2][13]/4096.0f,mtxCurrent[2][14]/4096.0f,mtxCurrent[2][15]/4096.0f};
-	MatrixMultVec4x4(temp, normal);
+	//CACHE_ALIGN float temp[16] = {mtxCurrent[2][0]/4096.0f,mtxCurrent[2][1]/4096.0f,mtxCurrent[2][2]/4096.0f,mtxCurrent[2][3]/4096.0f,mtxCurrent[2][4]/4096.0f,mtxCurrent[2][5]/4096.0f,mtxCurrent[2][6]/4096.0f,mtxCurrent[2][7]/4096.0f,mtxCurrent[2][8]/4096.0f,mtxCurrent[2][9]/4096.0f,mtxCurrent[2][10]/4096.0f,mtxCurrent[2][11]/4096.0f,mtxCurrent[2][12]/4096.0f,mtxCurrent[2][13]/4096.0f,mtxCurrent[2][14]/4096.0f,mtxCurrent[2][15]/4096.0f};
+	//MatrixMultVec4x4(temp, normal);
 
 	s16 x = (s16)(normal[0]*4096);
 	s16 y = (s16)(normal[1]*4096);
@@ -1778,7 +1796,7 @@ s32 gfx3d_GetDirectionalMatrix (u32 index)
 {
 	int _index = (((index / 3) * 4) + (index % 3));
 
-	//return (s32)(mtxCurrent[2][_index]*(1<<12));
+	//return (s32)(mtxCurrent[2][_index]*(4096/*1<<12*/));
 	return mtxCurrent[2][_index];
 }
 
@@ -2056,9 +2074,10 @@ void gfx3d_execute3D()
 	//this is a SPEED HACK
 	//fifo is currently emulated more accurately than it probably needs to be.
 	//without this batch size the emuloop will escape way too often to run fast.
-	const int HACK_FIFO_BATCH_SIZE = 64;
+	const int HACK_FIFO_BATCH_SIZE = 1;
 
-	for(int i=0;i<HACK_FIFO_BATCH_SIZE;i++) {
+	//for(int i=0;i<HACK_FIFO_BATCH_SIZE;i++) 
+	{
 		if(GFX_PIPErecv(&cmd, &param))
 		{
 			//if (isSwapBuffers) printf("Executing while swapbuffers is pending: %d:%08X\n",cmd,param);
@@ -2081,7 +2100,7 @@ void gfx3d_execute3D()
 			//check the compatibility, at the very least it will be nice to know if any games suffer from
 			//3d running too fast
 			MMU.gfx3dCycles = nds_timer+1;
-		} else break;
+		} //else break;
 	}
 
 }
@@ -2211,6 +2230,7 @@ static void gfx3d_doFlush()
 	//TODO - this _MUST_ be moved later in the pipeline, after clipping.
 	//the w-division here is just an approximation to fix the shop in harvest moon island of happiness
 	//also the buttons in the knights in the nightmare frontend depend on this
+	int ctr = 0;
 	for(int i=0; i<polycount; i++)
 	{
 		// TODO: Possible divide by zero with the w-coordinate.
@@ -2231,18 +2251,13 @@ static void gfx3d_doFlush()
 			poly.miny = min(poly.miny, verty);
 			poly.maxy = max(poly.maxy, verty);
 		}
-
-	}
-
-	//we need to sort the poly list with alpha polys last
-	//first, look for opaque polys
-	int ctr=0;
-	for(int i=0;i<polycount;i++) {
-		POLY &poly = polylist->list[i];
+		
 		if(!poly.isTranslucent())
 			gfx3d.indexlist.list[ctr++] = i;
+
 	}
-	int opaqueCount = ctr;
+
+	//int opaqueCount = ctr;
 	//then look for translucent polys
 	for(int i=0;i<polycount;i++) {
 		POLY &poly = polylist->list[i];
@@ -2258,19 +2273,19 @@ static void gfx3d_doFlush()
 	//now we have to sort the opaque polys by y-value.
 	//(test case: harvest moon island of happiness character cretor UI)
 	//should this be done after clipping??
-	std::stable_sort(gfx3d.indexlist.list, gfx3d.indexlist.list + opaqueCount, gfx3d_ysort_compare);
+	/*std::stable_sort(gfx3d.indexlist.list, gfx3d.indexlist.list + opaqueCount, gfx3d_ysort_compare);
 	
 	if(!gfx3d.state.sortmode)
 	{
 		//if we are autosorting translucent polys, we need to do this also
 		//TODO - this is unverified behavior. need a test case
 		std::stable_sort(gfx3d.indexlist.list + opaqueCount, gfx3d.indexlist.list + polycount, gfx3d_ysort_compare);
-	}
+	}*/
 
 	//switch to the new lists
 	twiddleLists();
 
-	if(driver->view3d->IsRunning())
+	/*if(driver->view3d->IsRunning())
 	{
 //		viewer3d_state->frameNumber = currFrameCounter;
 		viewer3d_state->state = gfx3d.state;
@@ -2278,7 +2293,7 @@ static void gfx3d_doFlush()
 		viewer3d_state->vertlist = *gfx3d.vertlist;
 		viewer3d_state->indexlist = gfx3d.indexlist;
 		driver->view3d->NewFrame();
-	}
+	}*/
 
 	drawPending = TRUE;
 }
@@ -2420,10 +2435,15 @@ void gfx3d_glGetLightColor(unsigned int index, unsigned int* dest)
 	*dest = lightColor[index];
 }
 
+#include"rasterize.h"
+
+
 void gfx3d_GetLineData(int line, u8** dst)
 {
 	gpu3D->NDS_3D_RenderFinish();
-	*dst = gfx3d_convertedScreen+((line)<<(8+2));
+
+	*dst = (u8*)_screenColor + _3DLineAddr[line];
+	//*dst = gfx3d_convertedScreen+((line)<<(8+2));
 }
 
 void gfx3d_GetLineData15bpp(int line, u16** dst)
@@ -2531,7 +2551,7 @@ SFORMAT SF_GFX3D[]={
 	{ "GTVC", 4, 1, &tempVertInfo.count},
 	{ "GTVM", 4, 4, tempVertInfo.map},
 	{ "GTVF", 4, 1, &tempVertInfo.first},
-	{ "G3CX", 1, 4*GFX3D_FRAMEBUFFER_WIDTH*GFX3D_FRAMEBUFFER_HEIGHT, gfx3d_convertedScreen},
+	//{ "G3CX", 1, 4*GFX3D_FRAMEBUFFER_WIDTH*GFX3D_FRAMEBUFFER_HEIGHT, gfx3d_convertedScreen},
 	{ 0 }
 };
 

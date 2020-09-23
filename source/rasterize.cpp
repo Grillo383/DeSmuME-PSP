@@ -1,16 +1,13 @@
 /*
 	Copyright (C) 2009-2015 DeSmuME team
-
 	This file is free software: you can redistribute it and/or modify
 	it under the terms of the GNU General Public License as published by
 	the Free Software Foundation, either version 2 of the License, or
 	(at your option) any later version.
-
 	This file is distributed in the hope that it will be useful,
 	but WITHOUT ANY WARRANTY; without even the implied warranty of
 	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 	GNU General Public License for more details.
-
 	You should have received a copy of the GNU General Public License
 	along with the this software.  If not, see <http://www.gnu.org/licenses/>.
 */
@@ -76,6 +73,8 @@ static u8 decal_table[32][64][64];
 static u8 index_lookup_table[65];
 static u8 index_start_table[8];
 
+SceUID _3d;
+
 static bool softRastHasNewData = false;
 
 ////optimized float floor useful in limited cases
@@ -125,7 +124,7 @@ static FORCEINLINE int fastFloor(float f)
 //}
 
 static Fragment _screen[GFX3D_FRAMEBUFFER_WIDTH*GFX3D_FRAMEBUFFER_HEIGHT];
-static FragmentColor _screenColor[GFX3D_FRAMEBUFFER_WIDTH*GFX3D_FRAMEBUFFER_HEIGHT];
+FragmentColor _screenColor[GFX3D_FRAMEBUFFER_WIDTH*GFX3D_FRAMEBUFFER_HEIGHT];
 
 static FORCEINLINE int iround(float f) {
 	return (int)f; //lol
@@ -148,8 +147,11 @@ static FORCEINLINE void FloorDivMod(long Numerator, long Denominator, long &Floo
 
 	//but we have to bail out since our handling for these cases currently steps scanlines 
 	//the wrong way and goes totally nuts (freezes)
-	if(Denominator<=0) 
+	if (Denominator <= 0) {
 		failure = true;
+		return;
+	}
+		
 
 	if(Numerator >= 0) {
 		// positive case, C is okay
@@ -180,7 +182,7 @@ static FORCEINLINE float Fixed28_4ToFloat( fixed28_4 Value ) {
 //}
 static FORCEINLINE fixed28_4 Fixed28_4Mul( fixed28_4 A, fixed28_4 B ) {
 	// could make this asm to prevent overflow
-	return (A * B) / 16;	// 28.4 * 28.4 = 24.8 / 16 = 28.4
+	return (A * B) >> 4;	// 28.4 * 28.4 = 24.8 / 16 = 28.4
 }
 static FORCEINLINE int Ceil28_4( fixed28_4 Value ) {
 	int ReturnValue;
@@ -429,7 +431,7 @@ public:
 			wmask = width-1;
 			hmask = height-1;
 			wrap = (texParam>>16)&0xF;
-			enabled = gfx3d.renderState.enableTexturing && (texFormat!=0);
+			enabled = (texFormat!=0);
 		}
 
 		FORCEINLINE void clamp(s32 &val, const int size, const s32 sizemask){
@@ -635,7 +637,6 @@ public:
 				{
 					goto depth_fail;
 				}
-
 			}
 			else
 			{
@@ -969,7 +970,6 @@ public:
 								engine->screenColor[adr].b = 0;
 							}
 						}
-
 					}
 				}
 				first = false;
@@ -1159,6 +1159,11 @@ static void* execRasterizerUnit(void* arg)
 	return 0;
 }
 
+int PSPexecRasterizerUnit(unsigned int sz, void* arg) {
+	rasterizerUnit[0].mainLoop<false>(&mainSoftRasterizer);
+	return 0;
+}
+
 static char SoftRastInit(void)
 {
 	char result = Default3D_Init();
@@ -1202,6 +1207,7 @@ static char SoftRastInit(void)
 		*/
 
 	//}
+	_3d = sceKernelCreateThread("3D", PSPexecRasterizerUnit, 0x15, 0x10000, 0, NULL);
 
 	static bool tables_generated = false;
 	if(!tables_generated)
@@ -1282,7 +1288,7 @@ static void SoftRastVramReconfigureSignal()
 
 static void SoftRastConvertFramebuffer()
 {
-	memcpy(gfx3d_convertedScreen, _screenColor, GFX3D_FRAMEBUFFER_WIDTH*GFX3D_FRAMEBUFFER_HEIGHT*4);
+	//memcpy(gfx3d_convertedScreen, _screenColor, GFX3D_FRAMEBUFFER_WIDTH*GFX3D_FRAMEBUFFER_HEIGHT*4);
 }
 
 void SoftRasterizerEngine::initFramebuffer(const int width, const int height, const bool clearImage)
@@ -1766,8 +1772,10 @@ static void SoftRastRender()
 	else
 	{
 	*/
-		rasterizerUnit[0].mainLoop<false>(&mainSoftRasterizer);
+		//rasterizerUnit[0].mainLoop<false>(&mainSoftRasterizer);
 	//}
+
+	sceKernelStartThread(_3d, 0, &mainSoftRasterizer);
 }
 
 static void SoftRastRenderFinish()
@@ -1806,4 +1814,3 @@ GPU3DInterface gpu3DRasterize = {
 	SoftRastRenderFinish,
 	SoftRastVramReconfigureSignal
 };
-

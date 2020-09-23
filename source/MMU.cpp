@@ -22,6 +22,7 @@
 #include <string.h>
 #include <assert.h>
 #include <sstream>
+#include <map>
 
 #include "armcpu.h"
 #include "common.h"
@@ -48,6 +49,7 @@
 #include "SPU.h"
 
 #include <pspsuspend.h>
+#include "PSP/pspvfpu.h"
 
 //HCF: To allocate volatile memory
 /*
@@ -64,36 +66,72 @@ int inVolatileAssigned = 0;
 //TODO - do we need these here?
 _KEY2 key2;
 
-//http://home.utah.edu/~nahaj/factoring/isqrt.c.html
-static u64 isqrt (u64 x) {
-  u64   squaredbit, remainder, root;
+//http://www.azillionmonkeys.com/qed/sqroot.html
+static u32 isqrt (u64 x) {
+	  /*unsigned int temp, g=0;
 
-   if (x<1) return 0;
-  
-   /* Load the binary constant 01 00 00 ... 00, where the number
-    * of zero bits to the right of the single one bit
-    * is even, and the one bit is as far left as is consistant
-    * with that condition.)
-    */
-   squaredbit  = (u64) ((((u64) ~0LL) >> 1) & 
-                        ~(((u64) ~0LL) >> 2));
-   /* This portable load replaces the loop that used to be 
-    * here, and was donated by  legalize@xmission.com 
-    */
+	  if (val >= 0x40000000) {
+	    g = 0x8000; 
+	    val -= 0x40000000;
+	  }
 
-   /* Form bits of the answer. */
-   remainder = x;  root = 0;
-   while (squaredbit > 0) {
-     if (remainder >= (squaredbit | root)) {
-         remainder -= (squaredbit | root);
-         root >>= 1; root |= squaredbit;
-     } else {
-         root >>= 1;
-     }
-     squaredbit >>= 2; 
-   }
+	#define INNER_ISQRT(s)                        \
+	  temp = (g << (s)) + (1 << ((s) * 2 - 2));   \
+	  if (val >= temp) {                          \
+	    g += 1 << ((s)-1);                        \
+	    val -= temp;                              \
+	  }
 
-   return root;
+	  INNER_ISQRT (15)
+	  INNER_ISQRT (14)
+	  INNER_ISQRT (13)
+	  INNER_ISQRT (12)
+	  INNER_ISQRT (11)
+	  INNER_ISQRT (10)
+	  INNER_ISQRT ( 9)
+	  INNER_ISQRT ( 8)
+	  INNER_ISQRT ( 7)
+	  INNER_ISQRT ( 6)
+	  INNER_ISQRT ( 5)
+	  INNER_ISQRT ( 4)
+	  INNER_ISQRT ( 3)
+	  INNER_ISQRT ( 2)
+
+	#undef INNER_ISQRT
+
+	  temp = g+g+1;
+	  if (val >= temp) g++;
+	  return g;*/
+
+	u64   squaredbit, remainder, root;
+
+	if (x < 1) return 0;
+
+	/* Load the binary constant 01 00 00 ... 00, where the number
+	 * of zero bits to the right of the single one bit
+	 * is even, and the one bit is as far left as is consistant
+	 * with that condition.)
+	 */
+	squaredbit = (u64)((((u64)~0LL) >> 1) &
+		~(((u64)~0LL) >> 2));
+	/* This portable load replaces the loop that used to be
+	 * here, and was donated by  legalize@xmission.com
+	 */
+
+	 /* Form bits of the answer. */
+	remainder = x;  root = 0;
+	while (squaredbit > 0) {
+		if (remainder >= (squaredbit | root)) {
+			remainder -= (squaredbit | root);
+			root >>= 1; root |= squaredbit;
+		}
+		else {
+			root >>= 1;
+		}
+		squaredbit >>= 2;
+	}
+
+	return root;
 }
 
 u32 partie = 1;
@@ -343,7 +381,7 @@ static FORCEINLINE u32 MMU_LCDmap(u32 addr, bool& unmapped, bool& restricted)
 {
 	unmapped = false;
 	restricted = false; //this will track whether 8bit writes are allowed
-
+	
 	//handle SIWRAM and non-shared IWRAM in here too, since it is quite similar to vram.
 	//in fact it is probably implemented with the same pieces of hardware.
 	//its sort of like arm7 non-shared IWRAM is lowest priority, and then SIWRAM goes on top.
@@ -836,6 +874,7 @@ static inline void MMU_VRAMmapControl(u8 block, u8 VRAMBankCnt)
 	MMU_VRAMmapRefreshBank(VRAM_BANK_G);
 	MMU_VRAMmapRefreshBank(VRAM_BANK_F);
 	MMU_VRAMmapRefreshBank(VRAM_BANK_E);
+
 	//zero 21-jun-2012
 	//tomwi's streaming music demo sets A and D to ABG (the A is an accident).
 	//in this case, D should get priority. 
@@ -1108,17 +1147,38 @@ void SetupMMU(bool debugConsole, bool dsi) {
 	_MMU_MAIN_MEM_MASK32 = _MMU_MAIN_MEM_MASK & ~3;
 }
 
+
+std::map<u64, u32> cached_sqrt;
+std::map<u64, bool> IScached_sqrt;
+
 static void execsqrt() {
 	u32 ret;
-	u8 mode = MMU_new.sqrt.mode;
+	const u8 mode = MMU_new.sqrt.mode;
 	MMU_new.sqrt.busy = 1;
 
 	if (mode) { 
-		u64 v = T1ReadQuad(MMU.MMU_MEM[ARMCPU_ARM9][0x40], 0x2B8);
-		ret = (u32)isqrt(v);
+		const u64 v = T1ReadQuad(MMU.MMU_MEM[ARMCPU_ARM9][0x40], 0x2B8);
+		const bool cached = IScached_sqrt[v];
+
+		if (!cached) {
+			ret = isqrt(v);
+			cached_sqrt[v] = ret;
+			IScached_sqrt[v] = true;
+		}
+		else {
+			ret = cached_sqrt[v];
+		}
+
 	} else {
-		u32 v = T1ReadLong(MMU.MMU_MEM[ARMCPU_ARM9][0x40], 0x2B8);
-		ret = (u32)isqrt(v);
+		const u32 v = T1ReadLong(MMU.MMU_MEM[ARMCPU_ARM9][0x40], 0x2B8);
+		const bool cached = IScached_sqrt[v];
+
+		if (!cached){
+			ret = (int)sceFpuSqrt((float)v);
+			cached_sqrt[v] = ret;
+			IScached_sqrt[v] = true;
+		}else
+			ret = cached_sqrt[v];
 	}
 
 	//clear the result while the sqrt unit is busy
@@ -1131,6 +1191,42 @@ static void execsqrt() {
 	NDS_Reschedule();
 }
 
+std::map<std::string, s64> cached_div;
+std::map<std::string, bool> IScached_div;
+
+void itoa(long long int value, char* result) {
+
+	// check that the base if valid
+	static const char conversionTable[] = "0123456789abcdef";
+
+	char* out = result;
+
+	u64 quotient = value;
+
+	do {
+
+		*out = conversionTable[quotient % 16];
+
+		++out;
+
+		quotient >>= 4;
+
+	} while (quotient);
+
+	if (value < 0) *out++ = '-';
+
+	std::reverse(result, out);
+
+	*out = 0;
+}
+
+char* mystrcat(char* dest, char* src)
+{
+	while (*dest) dest++;
+	while (*dest++ = *src++);
+	return --dest;
+}
+
 static void execdiv() {
 
 	s64 num,den;
@@ -1138,6 +1234,7 @@ static void execdiv() {
 	u8 mode = MMU_new.div.mode;
 	MMU_new.div.busy = 1;
 	MMU_new.div.div0 = 0;
+	
 
 	switch(mode)
 	{
@@ -1171,7 +1268,25 @@ static void execdiv() {
 	}
 	else
 	{
-		res = num / den;
+		char _strIndex[64];
+		_strIndex[0] = '\0';
+		char* pStr = _strIndex;
+		char _tmp[8];
+		itoa(num, _strIndex);
+		itoa(den, _tmp);
+		pStr = mystrcat(pStr, _tmp);
+
+		const bool cached = IScached_div[_strIndex];
+
+		if (!cached) {
+			res = num / den;
+			cached_div[_strIndex] = res;
+			IScached_div[_strIndex] = true;
+		}
+		else {
+			res = cached_div[_strIndex];
+		}
+		
 		mod = num % den;
 	}
 
@@ -2303,7 +2418,7 @@ void DmaController::write32(const u32 val)
 	if(!doNotStart)
 		doSchedule();
 
-	driver->DEBUG_UpdateIORegView(BaseDriver::EDEBUG_IOREG_DMA);
+	//driver->DEBUG_UpdateIORegView(BaseDriver::EDEBUG_IOREG_DMA);
 }
 
 void DmaController::exec()
@@ -2329,7 +2444,7 @@ void DmaController::exec()
 				}
 			default:
 				doStop();
-				driver->DEBUG_UpdateIORegView(BaseDriver::EDEBUG_IOREG_DMA);
+				//driver->DEBUG_UpdateIORegView(BaseDriver::EDEBUG_IOREG_DMA);
 				return;
 		}
 	}
@@ -2372,7 +2487,7 @@ void DmaController::exec()
 		}
 	}
 
-	driver->DEBUG_UpdateIORegView(BaseDriver::EDEBUG_IOREG_DMA);
+	//driver->DEBUG_UpdateIORegView(BaseDriver::EDEBUG_IOREG_DMA);
 }
 
 template<int PROCNUM>
@@ -3763,30 +3878,30 @@ void FASTCALL _MMU_ARM9_write16(u32 adr, u16 val)
 				GPU_setMOSAIC(SubScreen.gpu,val) ; 	 
 				break ;
 				*/
-			//case REG_DISPA_BG0HOFS:
-			//	GPU_setBGxHOFS(0, MainScreen.gpu, val);
-			//	break;
-			//case REG_DISPA_BG0VOFS:
-			//	GPU_setBGxVOFS(0, MainScreen.gpu, val);
-			//	break;
-			//case REG_DISPA_BG1HOFS:
-			//	GPU_setBGxHOFS(1, MainScreen.gpu, val);
-			//	break;
-			//case REG_DISPA_BG1VOFS:
-			//	GPU_setBGxVOFS(1, MainScreen.gpu, val);
-			//	break;
-			//case REG_DISPA_BG2HOFS:
-			//	GPU_setBGxHOFS(2, MainScreen.gpu, val);
-			//	break;
-			//case REG_DISPA_BG2VOFS:
-			//	GPU_setBGxVOFS(2, MainScreen.gpu, val);
-			//	break;
-			//case REG_DISPA_BG3HOFS:
-			//	GPU_setBGxHOFS(3, MainScreen.gpu, val);
-			//	break;
-			//case REG_DISPA_BG3VOFS:
-			//	GPU_setBGxVOFS(3, MainScreen.gpu, val);
-			//	break;
+			case REG_DISPA_BG0HOFS:
+				GPU_setBGxHOFS(0, MainScreen.gpu, val);
+				break;
+			case REG_DISPA_BG0VOFS:
+				GPU_setBGxVOFS(0, MainScreen.gpu, val);
+				break;
+			case REG_DISPA_BG1HOFS:
+				GPU_setBGxHOFS(1, MainScreen.gpu, val);
+				break;
+			case REG_DISPA_BG1VOFS:
+				GPU_setBGxVOFS(1, MainScreen.gpu, val);
+				break;
+			case REG_DISPA_BG2HOFS:
+				GPU_setBGxHOFS(2, MainScreen.gpu, val);
+				break;
+			case REG_DISPA_BG2VOFS:
+				GPU_setBGxVOFS(2, MainScreen.gpu, val);
+				break;
+			case REG_DISPA_BG3HOFS:
+				GPU_setBGxHOFS(3, MainScreen.gpu, val);
+				break;
+			case REG_DISPA_BG3VOFS:
+				GPU_setBGxVOFS(3, MainScreen.gpu, val);
+				break;
 
 			case REG_DISPA_WIN0H: 	 
 				GPU_setWIN0_H (MainScreen.gpu,val) ; 	 
@@ -3819,7 +3934,7 @@ void FASTCALL _MMU_ARM9_write16(u32 adr, u16 val)
 				GPU_setWINOUT16(MainScreen.gpu, val) ; 	 
 				break ; 	 
 
-		/*	case REG_DISPB_BG0HOFS:
+			case REG_DISPB_BG0HOFS:
 				GPU_setBGxHOFS(0, SubScreen.gpu, val);
 				break;
 			case REG_DISPB_BG0VOFS:
@@ -3842,7 +3957,7 @@ void FASTCALL _MMU_ARM9_write16(u32 adr, u16 val)
 				break;
 			case REG_DISPB_BG3VOFS:
 				GPU_setBGxVOFS(3, SubScreen.gpu, val);
-				break;*/
+				break;
 
 			case REG_DISPB_WININ: 	 
 				GPU_setWININ(SubScreen.gpu, val) ; 	 
@@ -4254,10 +4369,10 @@ void FASTCALL _MMU_ARM9_write32(u32 adr, u32 val)
 				return;
 			}
 
-			//case REG_DISPA_BG0HOFS:
-			//	GPU_setBGxHOFS(0, MainScreen.gpu, val&0xFFFF);
-			//	GPU_setBGxVOFS(0, MainScreen.gpu, (val>>16));
-			//	break;
+			case REG_DISPA_BG0HOFS:
+				GPU_setBGxHOFS(0, MainScreen.gpu, val&0xFFFF);
+				GPU_setBGxVOFS(0, MainScreen.gpu, (val>>16));
+				break;
 
 			case REG_DISPA_WININ: 	 
 			{
@@ -4862,11 +4977,11 @@ void FASTCALL _MMU_ARM7_write08(u32 adr, u8 val)
 	if (slot2_write<ARMCPU_ARM7, u8>(adr, val))
 		return;
 
-	if (SPU_core->isSPU(adr))
+	/*if (SPU_core->isSPU(adr))
 	{
 		SPU_WriteByte(adr, val);
 		return;
-	}
+	}*/
 
 	if ((adr & 0xFFFF0000) == 0x04800000)
 	{
@@ -4971,11 +5086,11 @@ void FASTCALL _MMU_ARM7_write16(u32 adr, u16 val)
 	if (slot2_write<ARMCPU_ARM7, u16>(adr, val))
 		return;
 
-	if (SPU_core->isSPU(adr))
+	/*if (SPU_core->isSPU(adr))
 	{
 		SPU_WriteWord(adr, val);
 		return;
-	}
+	}*/
 
 	//wifi mac access
 	if ((adr & 0xFFFF0000) == 0x04800000)
@@ -5171,7 +5286,7 @@ void FASTCALL _MMU_ARM7_write32(u32 adr, u32 val)
 	if (slot2_write<ARMCPU_ARM7, u32>(adr, val))
 		return;
 
-	if(debuga)
+	/*if(debuga)
 		vdDejaLog(" if-sPU ");
 
 
@@ -5189,7 +5304,7 @@ void FASTCALL _MMU_ARM7_write32(u32 adr, u32 val)
 	}
 
 	if(debuga)
-		vdDejaLog(" otro-if ");
+		vdDejaLog(" otro-if ");*/
 
 
 	if ((adr & 0xFFFF0000) == 0x04800000)
@@ -5341,14 +5456,6 @@ void FASTCALL _MMU_ARM7_write32(u32 adr, u32 val)
 	}
 #endif
 
-	if(debuga)
-	{
-		char achJJJ[64];
-		memset(achJJJ, 0x00, 64);
-		sprintf(achJJJ," A PUNTO adr>>20 %d adrMASK %d val: %d  ---", adr>>20, adr&MMU.MMU_MASK[ARMCPU_ARM7][adr>>20], val);
-		vdDejaLog(achJJJ);
-		//vdDejaLog(" A PUNTO adr>>20 %d adrMASK %d val: %d  ---", adr>>20, adr&MMU.MMU_MASK[ARMCPU_ARM7][adr>>20], val);
-	}
 
 	// Removed the &0xFF as they are implicit with the adr&0x0FFFFFFF [shash]
 	T1WriteLong(MMU.MMU_MEM[ARMCPU_ARM7][adr>>20], adr&MMU.MMU_MASK[ARMCPU_ARM7][adr>>20], val);
@@ -5384,10 +5491,10 @@ u8 FASTCALL _MMU_ARM7_read08(u32 adr)
 	if (slot2_read<ARMCPU_ARM7, u8>(adr, slot2_val))
 		return slot2_val;
 
-	if (SPU_core->isSPU(adr))
+	/*if (SPU_core->isSPU(adr))
 	{
 		return SPU_ReadByte(adr);
-	}
+	}*/
 
 	// Address is an IO register
 	if ((adr >> 24) == 4)
@@ -5440,10 +5547,10 @@ u16 FASTCALL _MMU_ARM7_read16(u32 adr)
 	if (slot2_read<ARMCPU_ARM7, u16>(adr, slot2_val))
 		return slot2_val;
 
-    if (SPU_core->isSPU(adr))
+   /* if (SPU_core->isSPU(adr))
     {
         return SPU_ReadWord(adr);
-    }
+    }*/
 
 	// Address is an IO register
 	if ((adr >> 24) == 4)
@@ -5540,10 +5647,10 @@ u32 FASTCALL _MMU_ARM7_read32(u32 adr)
 	if (slot2_read<ARMCPU_ARM7, u32>(adr, slot2_val))
 		return slot2_val;
 
-    if (SPU_core->isSPU(adr))
+    /*if (SPU_core->isSPU(adr))
     {
         return SPU_ReadLong(adr);
-    }
+    }*/
 
 	// Address is an IO register
 	if ((adr >> 24) == 4)

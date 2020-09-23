@@ -30,6 +30,7 @@
 #include "gfx3d.h"
 #include "MMU.h"
 #include "NDSSystem.h"
+#include <oslib/oslib.h>
 
 using std::min;
 using std::max;
@@ -216,11 +217,10 @@ public:
 	//static const u32 kMaxCacheSize = 64*1024*1024; 
 	//changed by zeromus on 15-dec. I couldnt find any games that were getting anywhere NEAR 64
 	
-	
-	//HCF
-	static const u32 kMaxCacheSize = 1*1024*1024;
-	//static const u32 kMaxCacheSize = 4*1024*1024; 
-	/////static const u32 kMaxCacheSize = 16*1024*1024; 
+
+	//static const u32 kMaxCacheSize = 6*512*1024; //2MB
+	static const u32 kMaxCacheSize = 4*1024*1024; 
+	 // static const u32 kMaxCacheSize = 16*1024*1024; 
 	
 
 	//metal slug burns through sprites so fast, it can test it pretty quickly though

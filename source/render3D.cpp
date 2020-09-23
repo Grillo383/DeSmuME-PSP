@@ -56,7 +56,7 @@ void Default3D_Reset()
 
 void Default3D_Close()
 {
-	memset(gfx3d_convertedScreen, 0, sizeof(gfx3d_convertedScreen));
+	//memset(gfx3d_convertedScreen, 0, sizeof(gfx3d_convertedScreen));
 	default3DAlreadyClearedLayer = false;
 }
 
@@ -64,7 +64,7 @@ void Default3D_Render()
 {
 	if (!default3DAlreadyClearedLayer)
 	{
-		memset(gfx3d_convertedScreen, 0, sizeof(gfx3d_convertedScreen));
+		//memset(gfx3d_convertedScreen, 0, sizeof(gfx3d_convertedScreen));
 		default3DAlreadyClearedLayer = true;
 	}
 }

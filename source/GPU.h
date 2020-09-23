@@ -17,7 +17,7 @@
 	You should have received a copy of the GNU General Public License
 	along with the this software.  If not, see <http://www.gnu.org/licenses/>.
 */
-
+#pragma once
 #ifndef GPU_H
 #define GPU_H
 
@@ -547,19 +547,12 @@ typedef struct
 //this structure holds information for rendering.
 typedef struct
 {
-	u8 PixelsX[256];
-	u8 BGs[NB_BG], nbBGs;
+	u8 nbBGs;
 	u8 pad[1];
 	u16 nbPixelsX;
-	//256+8:
+	u8 BGs[NB_BG];
 	u8 pad2[248];
-
-	//things were slower when i organized this struct this way. whatever.
-	//u8 PixelsX[256];
-	//int BGs[NB_BG], nbBGs;
-	//int nbPixelsX;
-	////<-- 256 + 24
-	//u8 pad2[256-24];
+	u8 PixelsX[256];
 } itemsForPriority_t;
 #define MMU_ABG		0x06000000
 #define MMU_BBG		0x06200000
@@ -570,11 +563,14 @@ typedef struct
 extern CACHE_ALIGN u8 gpuBlendTable555[17][17][32][32];
 
 enum BGType {
-	BGType_Invalid=0, BGType_Text=1, BGType_Affine=2, BGType_Large8bpp=3, 
-	BGType_AffineExt=4, BGType_AffineExt_256x16=5, BGType_AffineExt_256x1=6, BGType_AffineExt_Direct=7
+	BGType_Invalid = 0, BGType_Text = 1, BGType_Affine = 2, BGType_Large8bpp = 3,
+	BGType_AffineExt = 4, BGType_AffineExt_256x16 = 5, BGType_AffineExt_256x1 = 6, BGType_AffineExt_Direct = 7
 };
 
 extern const BGType GPU_mode2type[8][4];
+
+#define GPU_setBGxHOFS(bg, gpu, val) 
+#define GPU_setBGxVOFS(bg, gpu, val)
 
 struct GPU
 {
@@ -582,67 +578,24 @@ struct GPU
 		: debug(false)
 	{}
 
-	// some structs are becoming redundant
-	// some functions too (no need to recopy some vars as it is done by MMU)
-	REG_DISPx * dispx_st;
-
 	//this indicates whether this gpu is handling debug tools
 	bool debug;
-
-	_BGxCNT & bgcnt(int num) { return (dispx_st)->dispx_BGxCNT[num].bits; }
-	_DISPCNT & dispCnt() { return dispx_st->dispx_DISPCNT.bits; }
-	template<bool MOSAIC> void modeRender(int layer);
-
-	DISPCAPCNT dispCapCnt;
-	BOOL LayersEnable[5];
-	itemsForPriority_t itemsForPriority[NB_PRIORITIES];
-
-#define BGBmpBB BG_bmp_ram
-#define BGChBB BG_tile_ram
-
-	u32 BG_bmp_large_ram[4];
-	u32 BG_bmp_ram[4];
-	u32 BG_tile_ram[4];
-	u32 BG_map_ram[4];
-
-	u8 BGExtPalSlot[4];
-	u32 BGSize[4][2];
-	BGType BGTypes[4];
-
-	struct MosaicColor {
-		u16 bg[4][256];
-		struct Obj {
-			u16 color;
-			u8 alpha, opaque;
-		} obj[256];
-	} mosaicColors;
-
-	u8 sprNum[256];
-	u8 h_win[2][256];
-	const u8 *curr_win[2];
-	void update_winh(int WIN_NUM); 
-	bool need_update_winh[2];
-	
-	template<int WIN_NUM> void setup_windows();
-
-	u8 core;
-
-	u8 dispMode;
-	u8 vramBlock;
-	u8 *VRAMaddr;
-
-	//FIFO	fifo;
-
-	u8 bgPrio[5];
-
 	BOOL bg0HasHighestPrio;
+	bool WININ0_SPECIAL;
+	bool WININ1_SPECIAL;
+	bool WINOUT_SPECIAL;
+	bool WINOBJ_SPECIAL;
+	bool blend1;
 
-	void * oam;
-	u32	sprMem;
+	BGType BGTypes[4];
+	BOOL LayersEnable[5];
+	bool need_update_winh[2];
+	bool blend2[8];
+
+
 	u8 sprBoundary;
 	u8 sprBMPBoundary;
 	u8 sprBMPMode;
-	u32 sprEnable;
 
 	u8 WIN0H0;
 	u8 WIN0H1;
@@ -655,41 +608,81 @@ struct GPU
 	u8 WIN1V1;
 
 	u8 WININ0;
-	bool WININ0_SPECIAL;
 	u8 WININ1;
-	bool WININ1_SPECIAL;
-
 	u8 WINOUT;
-	bool WINOUT_SPECIAL;
 	u8 WINOBJ;
-	bool WINOBJ_SPECIAL;
-
 	u8 WIN0_ENABLED;
 	u8 WIN1_ENABLED;
 	u8 WINOBJ_ENABLED;
 
-	u16 BLDCNT;
+
 	u8	BLDALPHA_EVA;
 	u8	BLDALPHA_EVB;
 	u8	BLDY_EVY;
-	u16 *currentFadeInColors, *currentFadeOutColors;
-	bool blend2[8];
 
-	CACHE_ALIGN u16 tempScanlineBuffer[256];
-	u8 *tempScanline;
-
-	u8	MasterBrightMode;
-	u32 MasterBrightFactor;
-
-	CACHE_ALIGN u8 bgPixels[1024]; //yes indeed, this is oversized. map debug tools try to write to it
-
-	u32 currLine;
 	u8 currBgNum;
-	bool blend1;
-	u8* currDst;
+	u8 core;
+	u8	MasterBrightMode;
 
+	u8 dispMode;
+	u8 vramBlock;
+	u8* VRAMaddr;
 	u8* _3dColorLine;
+	u8* currDst;
+	u8* tempScanline;
 
+	u16 BLDCNT;
+	u16* currentFadeInColors, * currentFadeOutColors;
+	void* oam;
+
+	u32	sprMem;
+	u32 currLine;
+	u32 MasterBrightFactor;
+	u32 sprEnable;
+
+	u8 BGExtPalSlot[4];
+	u8 bgPrio[5];
+	const u8* curr_win[2];
+
+	u32 BG_bmp_large_ram[4];
+	u32 BG_bmp_ram[4];
+	u32 BG_tile_ram[4];
+	u32 BG_map_ram[4];
+
+#define BGBmpBB BG_bmp_ram
+#define BGChBB BG_tile_ram
+
+	u32 BGSize[4][2];
+
+	u8 sprNum[256];
+	u8 h_win[2][256];
+	CACHE_ALIGN u8 bgPixels[1024]; //yes indeed, this is oversized. map debug tools try to write to it
+	CACHE_ALIGN u16 tempScanlineBuffer[256];
+
+	// some structs are becoming redundant
+	// some functions too (no need to recopy some vars as it is done by MMU)
+	REG_DISPx* dispx_st;
+
+	_BGxCNT& bgcnt(int num) { return (dispx_st)->dispx_BGxCNT[num].bits; }
+	_DISPCNT& dispCnt() { return dispx_st->dispx_DISPCNT.bits; }
+
+	template<bool MOSAIC> void modeRender(int layer);
+
+	DISPCAPCNT dispCapCnt;
+	itemsForPriority_t itemsForPriority[NB_PRIORITIES];
+
+	struct MosaicColor {
+		u16 bg[4][256];
+		struct Obj {
+			u16 color;
+			u8 alpha, opaque;
+		} obj[256];
+	} mosaicColors;
+
+
+	void update_winh(int WIN_NUM);
+
+	template<int WIN_NUM> void setup_windows();
 
 	static struct MosaicLookup {
 
@@ -698,25 +691,25 @@ struct GPU
 		} table[16][256];
 
 		MosaicLookup() {
-			for(int m=0;m<16;m++)
-				for(int i=0;i<256;i++) {
-					int mosaic = m+1;
-					TableEntry &te = table[m][i];
-					te.begin = (i%mosaic==0);
-					te.trunc = i/mosaic*mosaic;
+			for (int m = 0;m < 16;m++)
+				for (int i = 0;i < 256;i++) {
+					int mosaic = m + 1;
+					TableEntry& te = table[m][i];
+					te.begin = (i % mosaic == 0);
+					te.trunc = i / mosaic * mosaic;
 				}
 		}
 
-		TableEntry *width, *height;
+		TableEntry* width, * height;
 		int widthValue, heightValue;
-		
+
 	} mosaicLookup;
 	bool curr_mosaic_enabled;
 
 	u16 blend(u16 colA, u16 colB);
 
 	template<bool BACKDROP, BlendFunc FUNC, bool WINDOW>
-	FORCEINLINE FASTCALL bool _master_setFinalBGColor(u16 &color, const u32 x);
+	FORCEINLINE FASTCALL bool _master_setFinalBGColor(u16& color, const u32 x);
 
 	template<BlendFunc FUNC, bool WINDOW>
 	FORCEINLINE FASTCALL void _master_setFinal3dColor(int dstX, int srcX);
@@ -731,19 +724,19 @@ struct GPU
 	} spriteRenderMode;
 
 	template<GPU::SpriteRenderMode MODE>
-	void _spriteRender(u8 * dst, u8 * dst_alpha, u8 * typeTab, u8 * prioTab);
-	
-	inline void spriteRender(u8 * dst, u8 * dst_alpha, u8 * typeTab, u8 * prioTab)
+	void _spriteRender(u8* dst, u8* dst_alpha, u8* typeTab, u8* prioTab);
+
+	inline void spriteRender(u8* dst, u8* dst_alpha, u8* typeTab, u8* prioTab)
 	{
-		if(spriteRenderMode == SPRITE_1D)
-			_spriteRender<SPRITE_1D>(dst,dst_alpha,typeTab, prioTab);
+		if (spriteRenderMode == SPRITE_1D)
+			_spriteRender<SPRITE_1D>(dst, dst_alpha, typeTab, prioTab);
 		else
-			_spriteRender<SPRITE_2D>(dst,dst_alpha,typeTab, prioTab);
+			_spriteRender<SPRITE_2D>(dst, dst_alpha, typeTab, prioTab);
 	}
 
 
 	void setFinalColor3d(int dstX, int srcX);
-	
+
 	template<bool BACKDROP, int FUNCNUM> void setFinalColorBG(u16 color, const u32 x);
 	template<bool MOSAIC, bool BACKDROP> FORCEINLINE void __setFinalColorBck(u16 color, const u32 x, const int opaque);
 	template<bool MOSAIC, bool BACKDROP, int FUNCNUM> FORCEINLINE void ___setFinalColorBck(u16 color, const u32 x, const int opaque);
@@ -758,7 +751,7 @@ struct GPU
 		u32 x, y;
 	} affineInfo[2];
 
-	void renderline_checkWindows(u16 x, bool &draw, bool &effect) const;
+	void renderline_checkWindows(u16 x, bool& draw, bool& effect) const;
 
 	// check whether (x,y) is within the rectangle (including wraparounds) 
 	template<int WIN_NUM>
@@ -766,20 +759,20 @@ struct GPU
 
 	void setBLDALPHA(u16 val)
 	{
-		BLDALPHA_EVA = (val&0x1f) > 16 ? 16 : (val&0x1f); 
-		BLDALPHA_EVB = ((val>>8)&0x1f) > 16 ? 16 : ((val>>8)&0x1f);
+		BLDALPHA_EVA = (val & 0x1f) > 16 ? 16 : (val & 0x1f);
+		BLDALPHA_EVB = ((val >> 8) & 0x1f) > 16 ? 16 : ((val >> 8) & 0x1f);
 		updateBLDALPHA();
 	}
 
 	void setBLDALPHA_EVA(u8 val)
 	{
-		BLDALPHA_EVA = (val&0x1f) > 16 ? 16 : (val&0x1f);
+		BLDALPHA_EVA = (val & 0x1f) > 16 ? 16 : (val & 0x1f);
 		updateBLDALPHA();
 	}
-	
+
 	void setBLDALPHA_EVB(u8 val)
 	{
-		BLDALPHA_EVB = (val&0x1f) > 16 ? 16 : (val&0x1f);
+		BLDALPHA_EVB = (val & 0x1f) > 16 ? 16 : (val & 0x1f);
 		updateBLDALPHA();
 	}
 
@@ -787,13 +780,13 @@ struct GPU
 	u32 getVOFS(int bg);
 
 	typedef u8 TBlendTable[32][32];
-	TBlendTable *blendTable;
+	TBlendTable* blendTable;
 
 	void updateBLDALPHA()
 	{
 		blendTable = (TBlendTable*)&gpuBlendTable555[BLDALPHA_EVA][BLDALPHA_EVB][0][0];
 	}
-	
+
 };
 #if 0
 // normally should have same addresses
@@ -815,7 +808,7 @@ static void REG_DISPx_pack_test(GPU * gpu)
 }
 #endif
 
-CACHE_ALIGN extern u8 GPU_screen[4*256*192];
+//CACHE_ALIGN extern u8 GPU_screen[4*256*192];
 
 
 GPU * GPU_Init(u8 l);

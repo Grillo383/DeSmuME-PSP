@@ -55,6 +55,8 @@ struct Fragment
 	};
 };
 
+extern FragmentColor _screenColor[GFX3D_FRAMEBUFFER_WIDTH * GFX3D_FRAMEBUFFER_HEIGHT];
+
 class TexCacheItem;
 
 class SoftRasterizerEngine
@@ -80,7 +82,7 @@ public:
 	FragmentColor toonTable[32];
 	u8 fogTable[32768];
 	GFX3D_Clipper clipper;
-	GFX3D_Clipper::TClippedPoly *clippedPolys;
+	GFX3D_Clipper::TClippedPoly * clippedPolys;
 	int clippedPolyCounter;
 	TexCacheItem* polyTexKeys[POLYLIST_SIZE];
 	bool polyVisible[POLYLIST_SIZE];
