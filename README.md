@@ -8,3 +8,6 @@ The plan, as described in the [2020 PSP Homebrew Dev Conference](https://youtu.b
 Currently, the port is very basic. Everything is done on the main CPU (including all graphics and rendering) so it is very slow, and SDL is used as an abstraction layer for many parts (eg. input) rather than native PSP calls. This will hopefully change in the near future.
 
 Any questions, or want to talk to the devs? Come and talk to us on our [discord server](https://discord.gg/bePrj9W) if you're interested!
+
+
+Thanks to yoshihiropsp for dsonpsp source which I used to make some changes in this one.
