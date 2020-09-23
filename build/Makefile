@@ -1,10 +1,13 @@
-TARGET = DeSmuME-PSP
+TARGET = DesmumePSP
 
-MESS 	  = 1
-LSB_FIRST = 1
-SRCDIR 	  = ../source
+MESS=1
+LSB_FIRST=1
+PSP_LARGE_MEMORY = 1
+PSP_FW_VERSION=500
+SRCDIR = ../source
 
 OBJS = $(SRCDIR)/arm_instructions.o \
+$(SRCDIR)/arm_jit.o \
 $(SRCDIR)/armcpu.o \
 $(SRCDIR)/bios.o \
 $(SRCDIR)/common.o \
@@ -71,12 +74,23 @@ $(SRCDIR)/addons/slot2_piano.o \
 $(SRCDIR)/addons/slot2_rumblepak.o \
 $(SRCDIR)/addons/slot2_gbagame.o \
 $(SRCDIR)/addons/slot2_guitarGrip.o \
+$(SRCDIR)/PSP/FrontEnd.o \
+$(SRCDIR)/PSP/Gudraw.o \
+$(SRCDIR)/PSP/profiler.o \
+$(SRCDIR)/PSP/psp_sound.o \
+$(SRCDIR)/PSP/vram.o \
 $(SRCDIR)/sndsdl.o \
+$(SRCDIR)/sndpsp.o \
 $(SRCDIR)/ctrlssdl.o \
+$(SRCDIR)/saves.o \
+$(SRCDIR)/OGLRender.o \
 $(SRCDIR)/main.o
+#$(SRCDIR)/PSP/sceDmac.o 
+#$(SRCDIR)/matrix_asm_psp.o
+#$(SRCDIR)/cpu.o 
 
-CC  = psp-g++
-CXX = psp-g++
+CC=psp-g++
+CXX=psp-g++
 
 #ESTO NO HACE FALTA: SOLO RENOMBRAR A CPP!!!
 GCC/%.o: %.cpp
@@ -94,31 +108,36 @@ emu/machine/%.o: %.c
 emu/%.o: %.c
 			$(CXX) $< -o $@
 
+
 #ESTO NO HACE FALTA: SOLO RENOMBRAR A CPP!!!
 
 PSPSDK = $(shell psp-config --pspsdk-path)
 PSPDEV = $(shell psp-config -d)
-SDL_CONFIG = /usr/local/pspdev/psp/bin/sdl-config
+#SDL_CONFIG = /usr/local/pspdev/psp/bin/sdl-config
 
 
-#CFLAGS = -O2 -fweb -fomit-frame-pointer -G0 -Wall -D PSP
-CFLAGS = -O2 -ffast-math -fweb -fomit-frame-pointer  -G0 -D PSP #-Wall
+###CFLAGS = -O2 -fweb -fomit-frame-pointer -G0 -Wall -D PSP
+CFLAGS = -O2 -finline-functions -fno-rtti -ffast-math -fweb -fomit-frame-pointer  -G0 -Wall -D PSP -funsigned-char -Wall  -falign-loops -falign-labels -falign-jumps -faligned-new# -D HAVE_JIT
 
 
-CFLAGS += -IC:/pspsdk/psp/include/SDL -I./libs/include
-CXXFLAGS = -std=gnu++17 $(CFLAGS) -fno-exceptions
-ASFLAGS = $(CFLAGS)
+CXXFLAGS = $(CFLAGS) -fno-exceptions
 
-LIBS= -L./libs/lib -lstardust -lpthread-psp -lSDLmain -lSDL -lSDL_ttf -lSDL_image -lpspirkeyb -lpspwlan -lpsppower -lGL -lfreetype -ljpeg -lpng -lz -lm -lSDL -lpspgu -lpsphprm -lpspaudio -lstdc++ -lpspvfpu -lpsprtc -lvorbisidec $( shell $( SDL_CONFIG ) --libs )
-LIBS += -lpspaudiolib -lpspaudio -lpsppower
-LIBS += -lSDL -lSDL_ttf -lvorbisidec -logg -lstdc++
+ASFLAGS = $(CFLAGS) 
+#ASFLAGS = $(ASM) $(SRCDIR)/matrix_asm_psp.s -o .$(SRCDIR)/matrix_asm_psp.o 
 
-BUILD_PRX       = 1
-PSP_FW_VERSION  = 500
-EXTRA_TARGETS   = EBOOT.PBP
-PSP_EBOOT_TITLE = DeSmuME
-PSP_EBOOT_ICON  = ICON0.png
-PSP_EBOOT_PIC1  = PIC1.png
-#PSP_EBOOT_SND0 = SND0.at3
+
+INCDIR =  C:/pspsdk/psp/include/SDL ./libs/include
+
+LIBDIR = C:/pspsdk/psp/lib ./libs/lib
+LIBS  =  -lme -losl -lpspmath -lSDL -lpthread-psp -lpspirkeyb -lpspwlan -lpsppower -lglut -lpspgum -lGL -lfreetype -ljpeg -lpng -lz -lm -lpspgu -lpsphprm -lpspaudio -lstdc++ -lpspvfpu -lpsprtc -lvorbisidec
+LIBS += -lpspaudiolib -lpspaudio -lpsppower 
+LIBS += -lvorbisidec -logg -lstdc++ 
+
+EXTRA_TARGETS = EBOOT.PBP
+PSP_EBOOT_TITLE = Desmume
 
 include $(PSPSDK)/lib/build.mak
+
+PSP_EBOOT_ICON = ICON0.png
+#PSP_EBOOT_PIC1 = PIC1.png
+#PSP_EBOOT_SND0 = SND0.at3
