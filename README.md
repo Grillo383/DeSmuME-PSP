@@ -11,3 +11,4 @@ Any questions, or want to talk to the devs? Come and talk to us on our [discord 
 
 
 Thanks to yoshihiropsp for dsonpsp source which I used to make some changes in this one.
+This project uses psplib and oslib modV2.
