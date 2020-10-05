@@ -492,7 +492,7 @@ struct POLY {
 
 //HCF PSP
 //#define POLYLIST_SIZE 100000
-#define POLYLIST_SIZE 3000
+#define POLYLIST_SIZE 4000
 
 
 struct POLYLIST {
