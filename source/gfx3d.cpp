@@ -1,4 +1,4 @@
-/*	
+﻿/*	
 	Copyright (C) 2006 yopyop
 	Copyright (C) 2008-2015 DeSmuME team
 
@@ -333,7 +333,7 @@ int _hack_getMatrixStackLevel(int which) { return mtxStack[which].position; }
 /*
 static CACHE_ALIGN s32		mtxCurrent [4][16];
 static CACHE_ALIGN s32		mtxTemporal[16];*/
-static CACHE_ALIGN float		mtxCurrent[4][16];
+CACHE_ALIGN float		mtxCurrent[4][16];
 static CACHE_ALIGN float		mtxTemporal[16];
 static u32 mode = 0;
 
@@ -491,7 +491,25 @@ static void makeTables() {
 			}
 
 	for (int i = 0;i < 192;i++) {
-		_3DLineAddr[i] = i << 10;
+		_3DLineAddr[i] = i << 8;
+	}
+}
+
+template<int NUM_ROWS>
+FORCEINLINE void vector_fix2float(float* matrix, const float divisor)
+{
+	static const float _div = (1.f / 4096.f);
+	/*for (int i = 0;i < NUM_ROWS * 4;i++)
+		matrix[i] *= _div;*/
+	switch (NUM_ROWS)
+	{
+	case 4:
+		MatrixDivide4X4(matrix, _div);
+		break;
+
+	case 3:
+		MatrixDivide3X3(matrix, _div);
+		break;
 	}
 }
 
@@ -693,7 +711,21 @@ FORCEINLINE s32 vec3dot_fixed32(const s32* a, const s32* b) {
 }*/
 
 inline float vec3dot(float* a, float* b) {
-	return (((a[0]) * (b[0])) + ((a[1]) * (b[1])) + ((a[2]) * (b[2])));
+	float result = 0;
+	__asm__ volatile (
+		"ulv.q	C000, %1		\n"			
+		"ulv.q	C100, %2		\n"			
+
+		"vmul.t C200, C000, C100\n"
+
+		"vadd.s S000, S000, S200\n"
+		"vadd.s S000, S000, S201\n"
+		"vadd.s S000, S000, S202\n"
+		"vadd.s S000, S000, S203\n"
+
+		"mfv	%0, S000\n"
+		: "=r"(result) : "m"(*a), "m"(*b));
+	return result;//(((a[0]) * (b[0])) + ((a[1]) * (b[1])) + ((a[2]) * (b[2])));
 }
 
 #define SUBMITVERTEX(ii, nn) polylist->list[polylist->count].vertIndexes[ii] = tempVertInfo.map[nn];
@@ -704,39 +736,6 @@ std::map<s32, s32> cached_T;*/
 //Submit a vertex to the GE
 static void SetVertex()
 {
-	/*s32 coord[3] = {
-		coord[0],
-		coord[1],
-		coord[2]
-	};*/
-
-	auto _ASM_ = [](float& dst, float _val, float* _matrx, float* _norm) {
-		static const float div_val = 16.f;
-		__asm__ volatile (
-
-			"mtv		 %1, S001			\n"
-			"mtv		 %4, S002			\n"
-			"vmul.s		 S000,S001,S002		\n"
-			"mtv		 %2, S001			\n"
-			"mtv		 %5, S002			\n"
-			"vmul.s		 S003,S001,S002		\n"
-			"vadd.s		 S000,S000,S003		\n"
-			"mtv		 %3, S001			\n"
-			"mtv		 %6, S002			\n"
-			"vmul.s		 S003,S001,S002		\n"
-			"vadd.s		 S000,S000,S003		\n"
-
-			"mtv		 %7, S001			\n"
-			"mtv		 %8, S002			\n"
-			"vmul.s		 S003,S001,S002		\n"
-			"vadd.s		 S000,S000,S003		\n"
-
-			"vdiv.s		 S000,S000,S002		\n"
-			"mfv		 %0, S000			\n"
-
-			: "=r"(dst) : "r"(_norm[0]), "r"(_norm[1]), "r"(_norm[2]), "r"(_matrx[0]), "r"(_matrx[4]), "r"(_matrx[8]), "r"(_val), "r"(div_val));
-	};
-
 	float coord[3] = {
 			float16table[u16coord[0]],
 			float16table[u16coord[1]],
@@ -745,18 +744,15 @@ static void SetVertex()
 
 	ALIGN(16) float coordTransformed[4] = { coord[0], coord[1], coord[2], 1.f };
 
-	//ALIGN(16) s32 coordTransformed[4] = { coord[0], coord[1], coord[2], (4096/*1<<12*/) };
 
 	if (texCoordinateTransform == 3)
 	{
-		/*last_s = ((coord[0] * mtxCurrent[3][0] +
+		last_s = ((coord[0] * mtxCurrent[3][0] +
 			coord[1] * mtxCurrent[3][4] +
 			coord[2] * mtxCurrent[3][8]) + _s * 16.0f) / 16.0f;
 		last_t = ((coord[0] * mtxCurrent[3][1] +
 			coord[1] * mtxCurrent[3][5] +
-			coord[2] * mtxCurrent[3][9]) + _t * 16.0f) / 16.0f;*/
-		_ASM_(last_s, _s,  mtxCurrent[3],    coord);
-		_ASM_(last_t, _t, &mtxCurrent[3][1], coord);
+			coord[2] * mtxCurrent[3][9]) + _t * 16.0f) / 16.0f;
 	}
 
 	//refuse to do anything if we have too many verts or polys
@@ -773,10 +769,6 @@ static void SetVertex()
 	//(we could lazy cache the concatenated clip matrix and only generate it
 	//when we need to)
 	MatrixMultVec4x4_M2(mtxCurrent[0], coordTransformed);
-
-	//printf("%f %f %f\n",coord[0]/4096.0f,coord[1]/4096.0f,coord[2]/4096.0f);
-	//printf("x %f %f %f %f\n",mtxCurrent[0][0]/4096.0f,mtxCurrent[0][1]/4096.0f,mtxCurrent[0][2]/4096.0f,mtxCurrent[0][3]/4096.0f);
-	//printf(" = %f %f %f %f\n",coordTransformed[0]/4096.0f,coordTransformed[1]/4096.0f,coordTransformed[2]/4096.0f,coordTransformed[3]/4096.0f);
 
 	//TODO - culling should be done here.
 	//TODO - viewport transform?
@@ -819,6 +811,7 @@ static void SetVertex()
 				SUBMITVERTEX(2,2);
 				vertlist->count+=3;
 				polylist->list[polylist->count].type = 3;
+				//polylist->list[polylist->count].typeGU = 0;
 				tempVertInfo.count = 0;
 				break;
 			case GFX3D_QUADS:
@@ -831,6 +824,7 @@ static void SetVertex()
 				SUBMITVERTEX(3,3);
 				vertlist->count+=4;
 				polylist->list[polylist->count].type = 4;
+				//polylist->list[polylist->count].typeGU = 1;
 				tempVertInfo.count = 0;
 				break;
 			case GFX3D_TRIANGLE_STRIP:
@@ -841,6 +835,7 @@ static void SetVertex()
 				SUBMITVERTEX(1,1);
 				SUBMITVERTEX(2,2);
 				polylist->list[polylist->count].type = 3;
+				//polylist->list[polylist->count].typeGU = 2;
 
 				if(triStripToggle)
 					tempVertInfo.map[1] = vertlist->count+2-continuation;
@@ -865,6 +860,7 @@ static void SetVertex()
 				SUBMITVERTEX(2,3);
 				SUBMITVERTEX(3,2);
 				polylist->list[polylist->count].type = 4;
+				//polylist->list[polylist->count].typeGU = 3;
 				tempVertInfo.map[0] = vertlist->count+2-continuation;
 				tempVertInfo.map[1] = vertlist->count+3-continuation;
 				if(tempVertInfo.first)
@@ -951,42 +947,6 @@ static void gfx3d_glLightDirection_cache(int index)
 	{
 		cacheHalfVector[index][i] = ((cacheLightDirection[index][i] + lineOfSight[i]) / 2.0f);
 	}
-
-	/*s16 x = ((v<<22)>>22)<<3;
-	s16 y = ((v<<12)>>22)<<3;
-	s16 z = ((v<<2)>>22)<<3;
-
-	cacheLightDirection[index][0] = x;
-	cacheLightDirection[index][1] = y;
-	cacheLightDirection[index][2] = z;
-	cacheLightDirection[index][3] = 0;
-
-	//Multiply the vector by the directional matrix
-	MatrixMultVec3x3(mtxCurrent[2], cacheLightDirection[index]);
-
-	//Calculate the half angle vector
-	s32 lineOfSight[4] = {0, 0, (-1)<<12, 0};
-	for(int i = 0; i < 4; i++)
-	{
-		cacheHalfVector[index][i] = ((cacheLightDirection[index][i] + lineOfSight[i]));
-	}
-
-	//normalize the half angle vector
-	//can't believe the hardware really does this... but yet it seems...
-	s32 halfLength = ((s32)(sqrt((double)vec3dot_fixed32(cacheHalfVector[index],cacheHalfVector[index]))))<<6;
-
-	if(halfLength!=0)
-	{
-		halfLength = abs(halfLength);
-		halfLength >>= 6;
-		for(int i = 0; i < 4; i++)
-		{
-			s32 temp = cacheHalfVector[index][i];
-			temp <<= 6;
-			temp /= halfLength;
-			cacheHalfVector[index][i] = temp;
-		}
-	}*/
 }
 
 
@@ -1299,43 +1259,13 @@ static void gfx3d_glNormal(u32 v)
 					normalTable[(v >> 20) & 1023],
 					1 };
 
-	auto _ASM_ = [](float& dst, float _val, float* _matrx, float* _norm) {
-		static const float div_val = 16.f;
-		__asm__ volatile (
-
-			"mtv		 %1, S001			\n"
-			"mtv		 %4, S002			\n"
-			"vmul.s		 S000,S001,S002		\n"
-			"mtv		 %2, S001			\n"
-			"mtv		 %5, S002			\n"
-			"vmul.s		 S003,S001,S002		\n"
-			"vadd.s		 S000,S000,S003		\n"
-			"mtv		 %3, S001			\n"
-			"mtv		 %6, S002			\n"
-			"vmul.s		 S003,S001,S002		\n"
-			"vadd.s		 S000,S000,S003		\n"
-
-			"mtv		 %7, S001			\n"
-			"mtv		 %8, S002			\n"
-			"vmul.s		 S003,S001,S002		\n"
-			"vadd.s		 S000,S000,S003		\n"
-
-			"vdiv.s		 S000,S000,S002		\n"
-			"mfv		 %0, S000			\n"
-
-			: "=r"(dst) : "r"(_norm[0]), "r"(_norm[1]), "r"(_norm[2]), "r"(_matrx[0]), "r"(_matrx[4]), "r"(_matrx[8]), "r"(_val), "r"(div_val));
-	};
-
 	if (texCoordinateTransform == 2)
 	{
-		/*last_s = ((normal[0] * mtxCurrent[3][0] + normal[1] * mtxCurrent[3][4] +
-			normal[2] * mtxCurrent[3][8]) + (_s * 16.0f)) / 16.0f;*/
-		
-		/*last_t = ((normal[0] * mtxCurrent[3][1] + normal[1] * mtxCurrent[3][5] +
-			normal[2] * mtxCurrent[3][9]) + (_t * 16.0f)) / 16.0f;*/
+		last_s = ((normal[0] * mtxCurrent[3][0] + normal[1] * mtxCurrent[3][4] +
+			normal[2] * mtxCurrent[3][8]) + (_s * 16.0f)) / 16.0f;
 
-		_ASM_(last_s, _s, &mtxCurrent[3][0], normal);
-		_ASM_(last_t, _t, &mtxCurrent[3][1], normal);
+		last_t = ((normal[0] * mtxCurrent[3][1] + normal[1] * mtxCurrent[3][5] +
+				normal[2] * mtxCurrent[3][9]) + (_t * 16.0f)) / 16.0f;
 	}
 
 	MatrixMultVec3x3(mtxCurrent[2],normal);
@@ -1422,61 +1352,29 @@ static void gfx3d_glNormal(u32 v)
 
 
 
+#include <pspdebug.h>
+#include <psprtc.h>
+#include <pspmath.h>
 
 static void gfx3d_glTexCoord(u32 val)
 {
+
+//	sceKernelDcacheWritebackInvalidateAll();
+
+	//if (my_config.Dspr3D) return;
+
 	_t = (s16)(val >> 16);
 	_s = (s16)(val & 0xFFFF);
 
 	_s /= 16.0f;
 	_t /= 16.0f;
 
-	auto _ASM_ = [](float& dst, float* _matrx) {
-		static const float mul_val = 0.0625;
-		__asm__ volatile (
-			
-			// _s * _matrx
-			"mtv		 %1, S001		\n"
-			"mtv		 %6, S002		\n"
-			"vmul.s		 S000,S001,S002	\n"
-
-			// _t * _matrx
-			"mtv		 %2, S001		\n"
-			"mtv		 %5, S002		\n"
-			"vmul.s		 S003,S001,S002	\n"
-
-			// _s * _matrx + _t * _matrx
-			"vadd.s		 S000,S000,S003	\n"
-
-			// 0.0625f * _matrx
-			"mtv		 %3, S001			\n"
-			"mtv		 %7, S002			\n"
-			"vmul.s		 S003,S001,S002		\n"
-
-			// _s * _matrx + _t * _matrx + 0.0625f * _matrx
-			"vadd.s		 S000, S000, S003	\n"
-
-			// 0.0625f * _matrx
-			"mtv		 %4, S001			\n"
-			"vmul.s		 S003,S001,S002		\n"
-
-			// _s * _matrx + _t * _matrx + 0.0625f * _matrx + 0.0625f * _matrx
-			"vadd.s		 S000, S000, S003	\n"
-
-			"mfv		 %0, S000			\n"
-
-			: "=r"(dst) : "r"(_matrx[0]), "r"(_matrx[4]), "r"(_matrx[8]), "r"(_matrx[12]), "r"(_t), "r"(_s), "r"(mul_val));
-	};
-
 	if (texCoordinateTransform == 1)
 	{
-
-		_ASM_(last_s, &mtxCurrent[3][0]);
-		_ASM_(last_t, &mtxCurrent[3][1]);
-		/*last_s = _s * mtxCurrent[3][0] + _t * mtxCurrent[3][4] +
-			0.0625f * mtxCurrent[3][8] + 0.0625f * mtxCurrent[3][12];
-		last_t = _s * mtxCurrent[3][1] + _t * mtxCurrent[3][5] +
-			0.0625f * mtxCurrent[3][9] + 0.0625f * mtxCurrent[3][13];*/
+			last_s = _s * mtxCurrent[3][0] + _t * mtxCurrent[3][4] +
+				0.0625f * mtxCurrent[3][8] + 0.0625f * mtxCurrent[3][12];
+			last_t = _s * mtxCurrent[3][1] + _t * mtxCurrent[3][5] +
+				0.0625f * mtxCurrent[3][9] + 0.0625f * mtxCurrent[3][13];
 	}
 	else
 	{
@@ -1488,16 +1386,6 @@ static void gfx3d_glTexCoord(u32 val)
 
 static BOOL gfx3d_glVertex16b(u32 v)
 {
-	/*if(coordind==0)
-	{
-		coord[0] = (v<<16)>>16;
-		coord[1] = (v>>16)&0xFFFF;
-
-		++coordind;
-		return FALSE;
-	}
-
-	coord[2] = (v<<16)>>16;*/
 
 	if (coordind == 0)
 	{
@@ -1693,10 +1581,10 @@ static BOOL gfx3d_glBoxTest(u32 v)
 	MMU_new.gxstat.tr = 0;		// clear boxtest bit
 	MMU_new.gxstat.tb = 1;		// busy
 
-	//BTcoords[BTind++] = v & 0xFFFF;
-	//BTcoords[BTind++] = v >> 16;
+	BTcoords[BTind++] = v & 0xFFFF;
+	BTcoords[BTind++] = v >> 16;
 
-	BTind++;BTind++;
+	//BTind++;BTind++;
 
 	if (BTind < 5) return FALSE;
 	BTind = 0;
@@ -1719,7 +1607,7 @@ static BOOL gfx3d_glBoxTest(u32 v)
 
 	//nanostray title, ff4, ice age 3 depend on this and work
 	//garfields nightmare and strawberry shortcake DO DEPEND on the overflow behavior.
-/*
+
 	u16 ux = BTcoords[0];
 	u16 uy = BTcoords[1];
 	u16 uz = BTcoords[2];
@@ -1820,10 +1708,10 @@ static BOOL gfx3d_glBoxTest(u32 v)
 	{
 		//printf("%06d FAIL %d\n",boxcounter,gxFIFO.size);
 	}
-	*/
+	
 	//Xiro 22/09/2020
 	//Yeah I know this is cheating, but now we need speed and maybe this could help a bit..
-	MMU_new.gxstat.tr = 1;
+	//MMU_new.gxstat.tr = 1;
 	
 	return TRUE;
 }
@@ -1835,18 +1723,18 @@ static BOOL gfx3d_glPosTest(u32 v)
 	//printf("POSTEST\n");
 	MMU_new.gxstat.tb = 1;
 
-	//PTcoords[PTind++] = float16table[v & 0xFFFF];
-	//PTcoords[PTind++] = float16table[v >> 16];
+	PTcoords[PTind++] = float16table[v & 0xFFFF];
+	PTcoords[PTind++] = float16table[v >> 16];
 
-	PTind++;PTind++;
+	//PTind++;PTind++;
 
 	if (PTind < 3) return FALSE;
 	PTind = 0;
 
 	PTcoords[3] = 1.0f;
 
-	//MatrixMultVec4x4(mtxCurrent[1], PTcoords);
-	//MatrixMultVec4x4(mtxCurrent[0], PTcoords);
+	MatrixMultVec4x4(mtxCurrent[1], PTcoords);
+	MatrixMultVec4x4(mtxCurrent[0], PTcoords);
 
 	MMU_new.gxstat.tb = 0;
 
@@ -2354,6 +2242,7 @@ static bool HasTo_ogfx3d_execute(u8 cmd, u32 param)
 	return false;
 }
 
+
 void gfx3d_execute3D()
 {
 	u8	cmd = 0;
@@ -2365,18 +2254,16 @@ void gfx3d_execute3D()
 
 	//if(!my_config.Render3D) return;
 
-	const int HACK_FIFO_BATCH_SIZE = 8;
+	const int HACK_FIFO_BATCH_SIZE = 128;
 
-	if (my_config.Disable_3D_calc) {
+	/*if (my_config.Disable_3D_calc) {
 			if (GFX_PIPErecv(&cmd, &param)) {
-				GFX_DELAY(1);
-				MMU.gfx3dCycles = nds_timer + 24;
-				//triggerDma(EDMAMode_GXFifo);//We need this otherwise it will be slow as hell
+					GFX_DELAY(1);
+					MMU.gfx3dCycles = nds_timer + 2;
 			}else
 				return;
-			MMU.gfx3dCycles--;
 		return;
-	}
+	}*/
 
 	//this is a SPEED HACK
 	//fifo is currently emulated more accurately than it probably needs to be.
@@ -2400,6 +2287,7 @@ void gfx3d_execute3D()
 		//	if(HasTo_ogfx3d_execute(cmd,param))
 				gfx3d_execute(cmd, param);
 
+
 			//this is a COMPATIBILITY HACK.
 			//this causes 3d to take virtually no time whatsoever to execute.
 			//this was done for marvel nemesis, but a similar family of 
@@ -2407,7 +2295,7 @@ void gfx3d_execute3D()
 			//the true answer is probably dma bus blocking.. but lets go ahead and try this and
 			//check the compatibility, at the very least it will be nice to know if any games suffer from
 			//3d running too fast
-			MMU.gfx3dCycles = nds_timer + 1;
+				MMU.gfx3dCycles = nds_timer + 1;
 		} else break;
 	}
 
@@ -2472,6 +2360,19 @@ static inline bool gfx3d_ysort_compare_kalven(int num1, int num2)
 	return (num1 < num2);
 }
 
+static inline bool gfx3d_zsort_compare(int num1, int num2)
+{
+	const POLY& poly1 = polylist->list[num1];
+	const POLY& poly2 = polylist->list[num2];
+
+	if (poly1.maxz != poly2.maxz)
+		return poly1.maxz < poly2.maxz;
+	if (poly1.minz != poly2.minz)
+		return poly1.minz < poly2.minz;
+
+	return num1 < num2;
+}
+
 static bool gfx3d_ysort_compare(int num1, int num2)
 {
 	bool original = gfx3d_ysort_compare_orig(num1,num2);
@@ -2533,46 +2434,62 @@ static void gfx3d_doFlush()
 	osd->addFixed(180, 35, "%i/%i", max_polys, max_verts);		// max
 #endif
 
-	//find the min and max y values for each poly.
+//find the min and max y values for each poly.
 	//TODO - this could be a small waste of time if we are manual sorting the translucent polys
 	//TODO - this _MUST_ be moved later in the pipeline, after clipping.
 	//the w-division here is just an approximation to fix the shop in harvest moon island of happiness
 	//also the buttons in the knights in the nightmare frontend depend on this
-	int ctr = 0;
-	for(int i=0; i<polycount; i++)
+	for (int i = 0; i < polycount; i++)
 	{
 		// TODO: Possible divide by zero with the w-coordinate.
 		// Is the vertex being read correctly? Is 0 a valid value for w?
 		// If both of these questions answer to yes, then how does the NDS handle a NaN?
 		// For now, simply prevent w from being zero.
-		POLY &poly = polylist->list[i];
+		POLY& poly = polylist->list[i];
 		float verty = vertlist->list[poly.vertIndexes[0]].y;
+		float vertz = vertlist->list[poly.vertIndexes[0]].z;
 		float vertw = (vertlist->list[poly.vertIndexes[0]].w != 0.0f) ? vertlist->list[poly.vertIndexes[0]].w : 0.00000001f;
-		verty = 1.0f-(verty+vertw)/(2*vertw);
+	//	verty = 1.0f - (verty + vertw) / (2 * vertw);
+		vertz = 1.0f - (vertz + vertw) / (2 * vertw);
+
 		poly.miny = poly.maxy = verty;
+		poly.minz = poly.maxz = vertz;
 
-		for(int j=1; j<poly.type; j++)
+		for (int j = 1; j < poly.type; j++)
 		{
-			verty = vertlist->list[poly.vertIndexes[j]].y;
+			//verty = vertlist->list[poly.vertIndexes[j]].y;
+			vertz = vertlist->list[poly.vertIndexes[j]].z;
+
 			vertw = (vertlist->list[poly.vertIndexes[j]].w != 0.0f) ? vertlist->list[poly.vertIndexes[j]].w : 0.00000001f;
-			verty = 1.0f-(verty+vertw)/(2*vertw);
-			poly.miny = min(poly.miny, verty);
-			poly.maxy = max(poly.maxy, verty);
+
+			//verty = 1.0f - (verty + vertw) / (2 * vertw);
+			vertz = 1.0f - (vertz + vertw) / (2 * vertw);
+
+			//poly.miny = min(poly.miny, verty);
+			//poly.maxy = max(poly.maxy, verty);
+			
+			poly.minz = min(poly.minz, vertz);
+			poly.maxz = max(poly.maxz, vertz);
 		}
-		
-		if(!poly.isTranslucent())
-			gfx3d.indexlist.list[ctr++] = i;
 
 	}
 
-	//int opaqueCount = ctr;
+	//we need to sort the poly list with alpha polys last
+	//first, look for opaque polys
+	int ctr = 0;
+	for (int i = 0;i < polycount;i++) {
+		POLY& poly = polylist->list[i];
+		if (!poly.isTranslucent())
+			gfx3d.indexlist.list[ctr++] = i;
+	}
+	int opaqueCount = ctr;
 	//then look for translucent polys
-	for(int i=0;i<polycount;i++) {
-		POLY &poly = polylist->list[i];
-		if(poly.isTranslucent())
+	for (int i = 0;i < polycount;i++) {
+		POLY& poly = polylist->list[i];
+		if (poly.isTranslucent())
 			gfx3d.indexlist.list[ctr++] = i;
 	}
-	
+
 	//NOTE: the use of the stable_sort below must be here as a workaround for some compilers on osx and linux.
 	//we're hazy on the exact behaviour of the resulting bug, all thats known is the list gets mangled somehow.
 	//it should not in principle be relevant since the predicate results in no ties.
@@ -2581,9 +2498,13 @@ static void gfx3d_doFlush()
 	//now we have to sort the opaque polys by y-value.
 	//(test case: harvest moon island of happiness character cretor UI)
 	//should this be done after clipping??
-	/*std::stable_sort(gfx3d.indexlist.list, gfx3d.indexlist.list + opaqueCount, gfx3d_ysort_compare);
+    
+	//std::stable_sort(gfx3d.indexlist.list, gfx3d.indexlist.list + opaqueCount, gfx3d_ysort_compare);
+	std::stable_sort(gfx3d.indexlist.list, gfx3d.indexlist.list + opaqueCount, gfx3d_zsort_compare);
 	
-	if(!gfx3d.state.sortmode)
+
+/*
+	if (!gfx3d.state.sortmode)
 	{
 		//if we are autosorting translucent polys, we need to do this also
 		//TODO - this is unverified behavior. need a test case
@@ -2618,6 +2539,8 @@ void gfx3d_VBlankSignal()
 	}
 }
 
+#include"PSP/PSPDisplay.h"
+
 void gfx3d_VBlankEndSignal(bool skipFrame)
 {
 	if (!drawPending) return;
@@ -2633,6 +2556,8 @@ void gfx3d_VBlankEndSignal(bool skipFrame)
 		return;
 	}
 	**/
+
+	//EMU_SCREEN();
 	
 	gpu3D->NDS_3D_Render();
 }
@@ -2756,16 +2681,16 @@ void gfx3d_glGetLightColor(unsigned int index, unsigned int* dest)
 
 void gfx3d_GetLineData(int line, u8** dst)
 {
-	gpu3D->NDS_3D_RenderFinish();
+	//gpu3D->NDS_3D_RenderFinish();
 
-	*dst = (u8*)_screenColor + _3DLineAddr[line];
-	//*dst = gfx3d_convertedScreen+((line)<<(8+2));
+	//comment this if using GU 3D
+	*dst = (u8*)(_screen + _3DLineAddr[line]);
 }
 
 void gfx3d_GetLineData15bpp(int line, u16** dst)
 {
 	//TODO - this is not very thread safe!!!
-	static u16 buf[GFX3D_FRAMEBUFFER_WIDTH];
+	/*static u16 buf[GFX3D_FRAMEBUFFER_WIDTH];
 	*dst = buf;
 
 	u8* lineData;
@@ -2777,7 +2702,7 @@ void gfx3d_GetLineData15bpp(int line, u16** dst)
 		const u8 b = lineData[i*4+2];
 		const u8 a = lineData[i*4+3];
 		buf[i] = R6G6B6TORGB15(r,g,b) | (a==0?0:0x8000);
-	}
+	}*/
 }
 
 
@@ -2977,57 +2902,11 @@ static T interpolate(const float ratio, const T& x0, const T& x1) {
 	const float X1 = (float)x1;
 	float result = 0;
 
-	__asm__ volatile (
+	return (T)(x0 + (float)(x1-x0) * (ratio));
 
-		"mtv		   %1, S002			\n"
-		"mtv		   %2, S003			\n"
-		"vsub.s		 S001, S002, S003	\n"
-		"mtv		   %3, S002			\n"
-		"vmul.s		 S000, S001, S002	\n"
-		"vadd.s		 S000, S000, S003	\n"
-		"mfv		   %0, S000			\n"
-
-		: "=r"(result) : "r"(X1), "r"(X0), "r"(ratio));
-
-	//return (T)(x0 + (float)(x1-x0) * (ratio));
-
-	return (T)result;
+	//return (T)result;
 }
 
-float _Ratio(const float w_out, const float w_in, const float c_out, const float c_in) {
-	
-	float result = 0;
-
-	__asm__ volatile (
-		
-		// (w_outside - w_inside)
-		"mtv		%1, S001			\n"
-		"mtv		%2, S002			\n"
-		"vsub.s		S000, S001, S002	\n"
-
-		// (coord_outside - coord_inside)
-		"mtv		%3, S001			\n"
-		"mtv		%4, S002			\n"
-		"vsub.s		S003, S001, S002	\n"
-
-		// ((w_outside - w_inside) - (coord_outside - coord_inside))
-		"vsub.s		S003, S000, S003	\n"
-
-		// (coord_inside - w_inside) 
-		"mtv		%4, S001			\n"
-		"mtv		%2, S002			\n"
-		"vsub.s		S000, S001, S002	\n"
-
-		// (coord_inside - w_inside) / ((w_outside - w_inside) - (coord_outside - coord_inside))
-		"vdiv.s		 S000, S000, S003	\n"
-
-		"mfv		   %0, S000			\n"
-
-	: "=r"(result) : "r"(w_out), "r"(w_in), "r"(c_out), "r"(c_in));
-	
-	return result;
-//	(coord_inside - w_inside) / ((w_outside - w_inside) - (coord_outside - coord_inside));
-}
 
 
 //http://www.cs.berkeley.edu/~ug/slide/pipeline/assignments/as6/discussion.shtml
@@ -3052,7 +2931,7 @@ static FORCEINLINE VERT clipPoint(VERT* inside, VERT* outside, int coord, int wh
 	}
 
 
-	t = _Ratio(w_outside, w_inside, coord_outside, coord_inside);
+	t = (coord_inside - w_inside) / ((w_outside - w_inside) - (coord_outside - coord_inside));
 	
 
 #define INTERP(X) ret . X = interpolate(t, inside-> X ,outside-> X )
@@ -3213,7 +3092,7 @@ typedef ClipperPlane<0,-1,Stage2> Stage1;        static Stage1 clipper  (clipper
 
 template<bool hirez> void GFX3D_Clipper::clipPoly(POLY* poly, VERT** verts)
 {
-	CLIPLOG("==Begin poly==\n");
+	//CLIPLOG("==Begin poly==\n");
 
 	int type = poly->type;
 	numScratchClipVerts = 0;
@@ -3235,6 +3114,42 @@ template<bool hirez> void GFX3D_Clipper::clipPoly(POLY* poly, VERT** verts)
 		clippedPolys[clippedPolyCounter].poly = poly;
 		clippedPolyCounter++;
 	}
+}
+
+int GFX3D_Clipper::clipPolyGU(POLY* poly, VERT** verts, Vertex* guVerts)
+{
+	//CLIPLOG("==Begin poly==\n");
+	return 0;
+
+	int type = poly->type;
+	numScratchClipVerts = 0;
+
+	clipper.init(clippedPolys[clippedPolyCounter].clipVerts);
+	for (int i = 0;i < type;i++) {
+		clipper.clipVert(verts[i]);
+	}
+	int outType = clipper.finish();
+
+	//assert((u32)outType < MAX_CLIPPED_VERTS);
+	if (outType < 3)
+	{
+		//a totally clipped poly. discard it.
+		//or, a degenerate poly. we're not handling these right now
+		return 0;
+	}
+	else
+	{
+		for (int i = 0; i < outType;++i)
+		{
+
+		}
+
+		clippedPolys[clippedPolyCounter].type = outType;
+		clippedPolys[clippedPolyCounter].poly = poly;
+		clippedPolyCounter++;
+	}
+
+	return outType;
 }
 //these templates needed to be instantiated manually
 template void GFX3D_Clipper::clipPoly<true>(POLY* poly, VERT** verts);

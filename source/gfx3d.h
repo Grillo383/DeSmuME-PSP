@@ -25,6 +25,7 @@
 
 #include "types.h"
 #include "PSP/FrontEnd.h"
+#include "pspvfpu.h"
 
 class EMUFILE;
 
@@ -122,6 +123,14 @@ inline u32 RGB15TO6665(u16 col, u8 alpha5)
 
 // 15-bit to 24-bit depth formula from http://nocash.emubase.de/gbatek.htm#ds3drearplane
 #define DS_DEPTH15TO24(depth) ( dsDepthExtend_15bit_to_24bit[(depth) & 0x7FFF] )
+
+enum PolygonMode
+{
+	POLYGON_MODE_MODULATE = 0,
+	POLYGON_MODE_DECAL = 1,
+	POLYGON_MODE_TOONHIGHLIGHT = 2,
+	POLYGON_MODE_SHADOW = 3
+};
 
 // POLYGON PRIMITIVE TYPES
 enum
@@ -265,9 +274,11 @@ struct POLY {
 	u8 vtxFormat;
 	u16 vertIndexes[4]; //up to four verts can be referenced by this poly
 	int type; //tri or quad
+	//int typeGU; //tri or quad
 	u32 polyAttr, texParam, texPalette; //the hardware rendering params
 	u32 viewport;
 	float miny, maxy;
+	float minz, maxz;
 
 	void setVertIndexes(int a, int b, int c, int d=-1)
 	{
@@ -492,7 +503,11 @@ struct POLY {
 
 //HCF PSP
 //#define POLYLIST_SIZE 100000
-#define POLYLIST_SIZE 4000
+#ifdef LOWRAM
+#define POLYLIST_SIZE 1500
+#else
+#define POLYLIST_SIZE 9000
+#endif // LOWRAM
 
 
 struct POLYLIST {
@@ -564,8 +579,11 @@ struct VERT {
 
 //HCF PSP
 //#define VERTLIST_SIZE 100000
-#define VERTLIST_SIZE 12000
-
+#ifdef LOWRAM
+#define VERTLIST_SIZE 3000
+#else
+#define VERTLIST_SIZE 36000
+#endif
 
 struct VERTLIST {
 	int count;
@@ -580,6 +598,14 @@ struct INDEXLIST {
 struct VIEWPORT {
 	int x, y, width, height;
 	void decode(u32 v);
+};
+
+//PSP GU
+struct Vertex
+{
+	//u16 color;
+	float u, v;
+	float x, y, z;
 };
 
 //ok, imagine the plane that cuts diagonally across a cube such that it clips
@@ -600,6 +626,7 @@ public:
 
 	//the entry point for poly clipping
 	template<bool hirez> void clipPoly(POLY* poly, VERT** verts);
+	int clipPolyGU(POLY* poly, VERT** verts, Vertex* guVerts);
 
 	//the output of clipping operations goes into here.
 	//be sure you init it before clipping!
@@ -716,6 +743,8 @@ extern GFX3D gfx3d;
 
 //---------------------
 
+extern CACHE_ALIGN float mtxCurrent[4][16];
+
 extern CACHE_ALIGN u32 color_15bit_to_24bit[32768];
 extern CACHE_ALIGN u32 color_15bit_to_24bit_reverse[32768];
 extern CACHE_ALIGN u16 color_15bit_to_16bit_reverse[32768];
@@ -734,6 +763,7 @@ extern CACHE_ALIGN u8 gfx3d_convertedAlpha[GFX3D_FRAMEBUFFER_WIDTH*GFX3D_FRAMEBU
 extern BOOL isSwapBuffers;
 
 int _hack_getMatrixStackLevel(int);
+
 
 void gfx3d_glFlush(u32 v);
 // end GE commands

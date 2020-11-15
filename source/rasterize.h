@@ -21,7 +21,7 @@
 #include "render3D.h"
 #include "gfx3d.h"
 
-extern GPU3DInterface gpu3DRasterize;
+extern  GPU3DInterface gpu3DRasterize;
 
 union FragmentColor {
 	u32 color;
@@ -55,7 +55,7 @@ struct Fragment
 	};
 };
 
-extern FragmentColor _screenColor[GFX3D_FRAMEBUFFER_WIDTH * GFX3D_FRAMEBUFFER_HEIGHT];
+extern volatile  u32 _screen[GFX3D_FRAMEBUFFER_WIDTH * GFX3D_FRAMEBUFFER_HEIGHT];
 
 class TexCacheItem;
 
@@ -84,9 +84,6 @@ public:
 	GFX3D_Clipper clipper;
 	GFX3D_Clipper::TClippedPoly * clippedPolys;
 	int clippedPolyCounter;
-	TexCacheItem* polyTexKeys[POLYLIST_SIZE];
-	bool polyVisible[POLYLIST_SIZE];
-	bool polyBackfacing[POLYLIST_SIZE];
 	Fragment *screen;
 	FragmentColor *screenColor;
 	POLYLIST* polylist;

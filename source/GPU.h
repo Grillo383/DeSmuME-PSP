@@ -35,6 +35,8 @@ struct MMU_struct;
 void gpu_savestate(EMUFILE* os);
 bool gpu_loadstate(EMUFILE* is, int size);
 
+extern volatile u8 GPU_Screen[192 * 256 * 4];
+
 /*******************************************************************************
     this structure is for display control,
     it holds flags for general display
@@ -510,30 +512,108 @@ enum GPU_OBJ_MODE
 	GPU_OBJ_MODE_Bitmap = 3
 };
 
-struct _OAM_
+typedef union
 {
-	//attr0
-	u8 Y;
-	u8 RotScale;
-	u8 Mode;
-	u8 Mosaic;
-	u8 Depth;
-	u8 Shape;
-	//att1
-	s16 X;
-	u8 RotScalIndex;
-	u8 HFlip, VFlip;
-	u8 Size;
-	//attr2
-	u16 TileIndex;
-	u8 Priority;
-	u8 PaletteIndex;
-	//attr3
-	u16 attr3;
+	u16 attr[4];
+
+	struct
+	{
+#ifndef MSB_FIRST
+		union
+		{
+			u16 attr0;
+
+			struct
+			{
+				u16 Y : 8;					//  0- 7: Sprite Y-coordinate location within the framebuffer; 0...255
+				u16 RotScale : 1;				//     8: Perform rotation/scaling; 0=Disable, 1=Enable
+				u16 Disable : 1;				//     9: OBJ disable flag, only if Bit8 is cleared; 0=Perform render, 1=Do not perform render
+				u16 Mode : 2;					// 10-11: OBJ mode; 0=Normal, 1=Transparent, 2=Window, 3=Bitmap
+				u16 Mosaic : 1;				//    12: Mosaic render: 0=Disable, 1=Enable
+				u16 PaletteMode : 1;			//    13: Color/palette select; 0=16 palettes of 16 colors each, 1=Single palette of 256 colors
+				u16 Shape : 2;				// 14-15: OBJ shape; 0=Square, 1=Horizontal, 2=Vertical, 3=Prohibited
+			};
+
+			struct
+			{
+				u16 : 8;
+				u16 : 1;
+				u16 DoubleSize : 1;			//     9: Perform double-size render, only if Bit8 is set; 0=Disable, 1=Enable
+				u16 : 6;
+			};
+		};
+
+		s16 X : 9;							// 16-24: Sprite X-coordinate location within the framebuffer; 0...511
+		u16 RotScaleIndex : 3;				// 25-27: Rotation/scaling parameter selection; 0...31
+		u16 HFlip : 1;						//    28: Flip sprite horizontally; 0=Normal, 1=Flip
+		u16 VFlip : 1;						//    29: Flip sprite vertically; 0=Normal, 1=Flip
+		u16 Size : 2;							// 30-31: OBJ size, interacts with Bit 14-15
+											//
+											//        Size| Square | Horizontal | Vertical
+											//           0:   8x8       16x8        8x16
+											//           1:  16x16      32x8        8x32
+											//           2:  32x32      32x16      16x32
+											//           3:  64x64      64x32      32x64
+		u16 TileIndex : 10;					// 32-41: Tile index; 0...1023
+
+		u16 Priority : 2;						// 42-43: Rendering priority; 0...3, where 0 is highest priority and 3 is lowest priority
+		u16 PaletteIndex : 4;					// 44-47: Palette index; 0...15
+#else
+		union
+		{
+			u16 attr0;
+
+			struct
+			{
+				u16 Y : 8;					//  0- 7: Sprite Y-coordinate location within the framebuffer; 0...255
+				u16 Shape : 2;				// 14-15: OBJ shape; 0=Square, 1=Horizontal, 2=Vertical, 3=Prohibited
+				u16 PaletteMode : 1;			//    13: Color/palette select; 0=16 palettes of 16 colors each, 1=Single palette of 256 colors
+				u16 Mosaic : 1;				//    12: Mosaic render: 0=Disable, 1=Enable
+				u16 Mode : 2;					// 10-11: OBJ mode; 0=Normal, 1=Transparent, 2=Window, 3=Bitmap
+				u16 Disable : 1;				//     9: OBJ disable flag, only if Bit8 is cleared; 0=Perform render, 1=Do not perform render
+				u16 RotScale : 1;				//     8: Perform rotation/scaling; 0=Disable, 1=Enable
+			};
+
+			struct
+			{
+				u16 : 8;
+				u16 : 6;
+				u16 DoubleSize : 1;			//     9: Perform double-size render, only if Bit8 is set; 0=Disable, 1=Enable
+				u16 : 1;
+			};
+		};
+
+		// 16-31: Whenever this is used, you will need to explicitly convert endianness.
+		u16 Size : 2;							// 30-31: OBJ size, interacts with Bit 14-15
+											//
+											//        Size| Square | Horizontal | Vertical
+											//           0:   8x8       16x8        8x16
+											//           1:  16x16      32x8        8x32
+											//           2:  32x32      32x16      16x32
+											//           3:  64x64      64x32      32x64
+		u16 VFlip : 1;						//    29: Flip sprite vertically; 0=Normal, 1=Flip
+		u16 HFlip : 1;						//    28: Flip sprite horizontally; 0=Normal, 1=Flip
+		u16 RotScaleIndex : 3;				// 25-27: Rotation/scaling parameter selection; 0...31
+		s16 X : 9;							// 16-24: Sprite X-coordinate location within the framebuffer; 0...511
+
+		// 32-47: Whenever this is used, you will need to explicitly convert endianness.
+		u16 PaletteIndex : 4;					// 44-47: Palette index; 0...15
+		u16 Priority : 2;						// 42-43: Rendering priority; 0...3, where 0 is highest priority and 3 is lowest priority
+		u16 TileIndex : 10;					// 32-41: Tile index; 0...1023
+#endif
+
+		u16 attr3 : 16;						// 48-63: Whenever this is used, you will need to explicitly convert endianness.
+	};
+} OAMAttributes;
+
+enum PaletteMode
+{
+	PaletteMode_16x16 = 0,
+	PaletteMode_1x256 = 1
 };
 
-void SlurpOAM(_OAM_* oam_output, void* oam_buffer, int oam_index);
-u16 SlurpOAMAffineParam(void* oam_buffer, int oam_index);
+/*void SlurpOAM(_OAM_* oam_output, void* oam_buffer, int oam_index);
+u16 SlurpOAMAffineParam(void* oam_buffer, int oam_index);*/
 
 typedef struct
 {
@@ -547,12 +627,19 @@ typedef struct
 //this structure holds information for rendering.
 typedef struct
 {
-	u8 nbBGs;
+	u8 PixelsX[256];
+	u8 BGs[NB_BG], nbBGs;
 	u8 pad[1];
 	u16 nbPixelsX;
-	u8 BGs[NB_BG];
+	//256+8:
 	u8 pad2[248];
-	u8 PixelsX[256];
+
+	//things were slower when i organized this struct this way. whatever.
+	//u8 PixelsX[256];
+	//int BGs[NB_BG], nbBGs;
+	//int nbPixelsX;
+	////<-- 256 + 24
+	//u8 pad2[256-24];
 } itemsForPriority_t;
 #define MMU_ABG		0x06000000
 #define MMU_BBG		0x06200000
@@ -563,8 +650,8 @@ typedef struct
 extern CACHE_ALIGN u8 gpuBlendTable555[17][17][32][32];
 
 enum BGType {
-	BGType_Invalid = 0, BGType_Text = 1, BGType_Affine = 2, BGType_Large8bpp = 3,
-	BGType_AffineExt = 4, BGType_AffineExt_256x16 = 5, BGType_AffineExt_256x1 = 6, BGType_AffineExt_Direct = 7
+	BGType_Invalid=0, BGType_Text=1, BGType_Affine=2, BGType_Large8bpp=3, 
+	BGType_AffineExt=4, BGType_AffineExt_256x16=5, BGType_AffineExt_256x1=6, BGType_AffineExt_Direct=7
 };
 
 extern const BGType GPU_mode2type[8][4];
@@ -578,24 +665,72 @@ struct GPU
 		: debug(false)
 	{}
 
+	// some structs are becoming redundant
+	// some functions too (no need to recopy some vars as it is done by MMU)
+	REG_DISPx * dispx_st;
+
 	//this indicates whether this gpu is handling debug tools
 	bool debug;
-	BOOL bg0HasHighestPrio;
-	bool WININ0_SPECIAL;
-	bool WININ1_SPECIAL;
-	bool WINOUT_SPECIAL;
-	bool WINOBJ_SPECIAL;
-	bool blend1;
 
-	BGType BGTypes[4];
+	_BGxCNT & bgcnt(int num) { return (dispx_st)->dispx_BGxCNT[num].bits; }
+	_DISPCNT & dispCnt() { return dispx_st->dispx_DISPCNT.bits; }
+
+	template<bool MOSAIC> void modeRender(int layer);
+
+	DISPCAPCNT dispCapCnt;
 	BOOL LayersEnable[5];
+	itemsForPriority_t itemsForPriority[NB_PRIORITIES];
+
+#define BGBmpBB BG_bmp_ram
+#define BGChBB BG_tile_ram
+
+	u32 BG_bmp_large_ram[4];
+	u32 BG_bmp_ram[4];
+	u32 BG_tile_ram[4];
+	u32 BG_map_ram[4];
+
+	u8* _paletteBG;
+	u8* _paletteOBJ;
+
+	u8 BGExtPalSlot[4];
+	u32 BGSize[4][2];
+	BGType BGTypes[4];
+
+	OAMAttributes* _oamList;
+
+	struct MosaicColor {
+		u16 bg[4][256];
+		struct Obj {
+			u16 color;
+			u8 alpha, opaque;
+		} obj[256];
+	} mosaicColors;
+
+	u8 sprNum[256];
+	u8 h_win[2][256];
+	const u8 *curr_win[2];
+	void update_winh(int WIN_NUM); 
 	bool need_update_winh[2];
-	bool blend2[8];
+	
+	template<int WIN_NUM> void setup_windows();
 
+	u8 core;
 
+	u8 dispMode;
+	u8 vramBlock;
+	u8 *VRAMaddr;
+
+	//FIFO	fifo;
+
+	u8 bgPrio[5];
+
+	BOOL bg0HasHighestPrio;
+
+	u32	sprMem;
 	u8 sprBoundary;
 	u8 sprBMPBoundary;
 	u8 sprBMPMode;
+	u32 sprEnable;
 
 	u8 WIN0H0;
 	u8 WIN0H1;
@@ -608,81 +743,41 @@ struct GPU
 	u8 WIN1V1;
 
 	u8 WININ0;
+	bool WININ0_SPECIAL;
 	u8 WININ1;
+	bool WININ1_SPECIAL;
+
 	u8 WINOUT;
+	bool WINOUT_SPECIAL;
 	u8 WINOBJ;
+	bool WINOBJ_SPECIAL;
+
 	u8 WIN0_ENABLED;
 	u8 WIN1_ENABLED;
 	u8 WINOBJ_ENABLED;
 
-
+	u16 BLDCNT;
 	u8	BLDALPHA_EVA;
 	u8	BLDALPHA_EVB;
 	u8	BLDY_EVY;
+	u16 *currentFadeInColors, *currentFadeOutColors;
+	bool blend2[8];
 
-	u8 currBgNum;
-	u8 core;
-	u8	MasterBrightMode;
-
-	u8 dispMode;
-	u8 vramBlock;
-	u8* VRAMaddr;
-	u8* _3dColorLine;
-	u8* currDst;
-	u8* tempScanline;
-
-	u16 BLDCNT;
-	u16* currentFadeInColors, * currentFadeOutColors;
-	void* oam;
-
-	u32	sprMem;
-	u32 currLine;
-	u32 MasterBrightFactor;
-	u32 sprEnable;
-
-	u8 BGExtPalSlot[4];
-	u8 bgPrio[5];
-	const u8* curr_win[2];
-
-	u32 BG_bmp_large_ram[4];
-	u32 BG_bmp_ram[4];
-	u32 BG_tile_ram[4];
-	u32 BG_map_ram[4];
-
-#define BGBmpBB BG_bmp_ram
-#define BGChBB BG_tile_ram
-
-	u32 BGSize[4][2];
-
-	u8 sprNum[256];
-	u8 h_win[2][256];
-	CACHE_ALIGN u8 bgPixels[1024]; //yes indeed, this is oversized. map debug tools try to write to it
 	CACHE_ALIGN u16 tempScanlineBuffer[256];
+	u8 *tempScanline;
 
-	// some structs are becoming redundant
-	// some functions too (no need to recopy some vars as it is done by MMU)
-	REG_DISPx* dispx_st;
+	u8	MasterBrightMode;
+	u32 MasterBrightFactor;
 
-	_BGxCNT& bgcnt(int num) { return (dispx_st)->dispx_BGxCNT[num].bits; }
-	_DISPCNT& dispCnt() { return dispx_st->dispx_DISPCNT.bits; }
+	CACHE_ALIGN u8 bgPixels[1024]; //yes indeed, this is oversized. map debug tools try to write to it
 
-	template<bool MOSAIC> void modeRender(int layer);
+	u32 currLine;
+	u8 currBgNum;
+	bool blend1;
+	u8* currDst;
 
-	DISPCAPCNT dispCapCnt;
-	itemsForPriority_t itemsForPriority[NB_PRIORITIES];
+	u8* _3dColorLine;
 
-	struct MosaicColor {
-		u16 bg[4][256];
-		struct Obj {
-			u16 color;
-			u8 alpha, opaque;
-		} obj[256];
-	} mosaicColors;
-
-
-	void update_winh(int WIN_NUM);
-
-	template<int WIN_NUM> void setup_windows();
 
 	static struct MosaicLookup {
 
@@ -691,25 +786,25 @@ struct GPU
 		} table[16][256];
 
 		MosaicLookup() {
-			for (int m = 0;m < 16;m++)
-				for (int i = 0;i < 256;i++) {
-					int mosaic = m + 1;
-					TableEntry& te = table[m][i];
-					te.begin = (i % mosaic == 0);
-					te.trunc = i / mosaic * mosaic;
+			for(int m=0;m<16;m++)
+				for(int i=0;i<256;i++) {
+					int mosaic = m+1;
+					TableEntry &te = table[m][i];
+					te.begin = (i%mosaic==0);
+					te.trunc = i/mosaic*mosaic;
 				}
 		}
 
-		TableEntry* width, * height;
+		TableEntry *width, *height;
 		int widthValue, heightValue;
-
+		
 	} mosaicLookup;
 	bool curr_mosaic_enabled;
 
 	u16 blend(u16 colA, u16 colB);
 
 	template<bool BACKDROP, BlendFunc FUNC, bool WINDOW>
-	FORCEINLINE FASTCALL bool _master_setFinalBGColor(u16& color, const u32 x);
+	FORCEINLINE FASTCALL bool _master_setFinalBGColor(u16 &color, const u32 x);
 
 	template<BlendFunc FUNC, bool WINDOW>
 	FORCEINLINE FASTCALL void _master_setFinal3dColor(int dstX, int srcX);
@@ -724,19 +819,30 @@ struct GPU
 	} spriteRenderMode;
 
 	template<GPU::SpriteRenderMode MODE>
-	void _spriteRender(u8* dst, u8* dst_alpha, u8* typeTab, u8* prioTab);
+	void _spriteRender(u8 * dst, u8 * dst_alpha, u8 * typeTab, u8 * prioTab);
 
-	inline void spriteRender(u8* dst, u8* dst_alpha, u8* typeTab, u8* prioTab)
+	template<GPU::SpriteRenderMode MODE>
+	void GU_spriteRender(u8* dst, u8* dst_alpha, u8* typeTab, u8* prioTab);
+	
+	inline void spriteRender(u8 * dst, u8 * dst_alpha, u8 * typeTab, u8 * prioTab)
 	{
-		if (spriteRenderMode == SPRITE_1D)
-			_spriteRender<SPRITE_1D>(dst, dst_alpha, typeTab, prioTab);
+		if(spriteRenderMode == SPRITE_1D)
+			_spriteRender<SPRITE_1D>(dst,dst_alpha,typeTab, prioTab);
 		else
-			_spriteRender<SPRITE_2D>(dst, dst_alpha, typeTab, prioTab);
+			_spriteRender<SPRITE_2D>(dst,dst_alpha,typeTab, prioTab);
+	}
+	
+	inline void GU_SpriteRender(u8 * dst, u8 * dst_alpha, u8 * typeTab, u8 * prioTab)
+	{
+		if(spriteRenderMode == SPRITE_1D)
+			GU_spriteRender<SPRITE_1D>(dst,dst_alpha,typeTab, prioTab);
+		else
+			GU_spriteRender<SPRITE_2D>(dst,dst_alpha,typeTab, prioTab);
 	}
 
 
 	void setFinalColor3d(int dstX, int srcX);
-
+	
 	template<bool BACKDROP, int FUNCNUM> void setFinalColorBG(u16 color, const u32 x);
 	template<bool MOSAIC, bool BACKDROP> FORCEINLINE void __setFinalColorBck(u16 color, const u32 x, const int opaque);
 	template<bool MOSAIC, bool BACKDROP, int FUNCNUM> FORCEINLINE void ___setFinalColorBck(u16 color, const u32 x, const int opaque);
@@ -751,7 +857,7 @@ struct GPU
 		u32 x, y;
 	} affineInfo[2];
 
-	void renderline_checkWindows(u16 x, bool& draw, bool& effect) const;
+	void renderline_checkWindows(u16 x, bool &draw, bool &effect) const;
 
 	// check whether (x,y) is within the rectangle (including wraparounds) 
 	template<int WIN_NUM>
@@ -759,20 +865,20 @@ struct GPU
 
 	void setBLDALPHA(u16 val)
 	{
-		BLDALPHA_EVA = (val & 0x1f) > 16 ? 16 : (val & 0x1f);
-		BLDALPHA_EVB = ((val >> 8) & 0x1f) > 16 ? 16 : ((val >> 8) & 0x1f);
+		BLDALPHA_EVA = (val&0x1f) > 16 ? 16 : (val&0x1f); 
+		BLDALPHA_EVB = ((val>>8)&0x1f) > 16 ? 16 : ((val>>8)&0x1f);
 		updateBLDALPHA();
 	}
 
 	void setBLDALPHA_EVA(u8 val)
 	{
-		BLDALPHA_EVA = (val & 0x1f) > 16 ? 16 : (val & 0x1f);
+		BLDALPHA_EVA = (val&0x1f) > 16 ? 16 : (val&0x1f);
 		updateBLDALPHA();
 	}
-
+	
 	void setBLDALPHA_EVB(u8 val)
 	{
-		BLDALPHA_EVB = (val & 0x1f) > 16 ? 16 : (val & 0x1f);
+		BLDALPHA_EVB = (val&0x1f) > 16 ? 16 : (val&0x1f);
 		updateBLDALPHA();
 	}
 
@@ -780,13 +886,13 @@ struct GPU
 	u32 getVOFS(int bg);
 
 	typedef u8 TBlendTable[32][32];
-	TBlendTable* blendTable;
+	TBlendTable *blendTable;
 
 	void updateBLDALPHA()
 	{
 		blendTable = (TBlendTable*)&gpuBlendTable555[BLDALPHA_EVA][BLDALPHA_EVB][0][0];
 	}
-
+	
 };
 #if 0
 // normally should have same addresses
@@ -832,8 +938,8 @@ typedef struct {
 	u16 offset;
 } NDS_Screen;
 
-extern NDS_Screen MainScreen;
-extern NDS_Screen SubScreen;
+extern volatile NDS_Screen MainScreen;
+extern volatile NDS_Screen SubScreen;
 
 int Screen_Init();
 void Screen_Reset(void);
@@ -855,7 +961,8 @@ void GPU_addBack(GPU *, u8 num);
 int GPU_ChangeGraphicsCore(int coreid);
 
 void GPU_set_DISPCAPCNT(u32 val) ;
-void GPU_RenderLine(NDS_Screen * screen, u16 l, bool skip = false) ;
+void GPU_RenderLine(volatile NDS_Screen * screen, u16 l, bool skip = false) ;
+void GPU_RenderGU(NDS_Screen * screen, u16 l, bool skip = false) ;
 void GPU_setMasterBrightness (GPU *gpu, u16 val);
 
 inline void GPU_setWIN0_H(GPU* gpu, u16 val) { gpu->WIN0H0 = val >> 8; gpu->WIN0H1 = val&0xFF; gpu->need_update_winh[0] = true; }
