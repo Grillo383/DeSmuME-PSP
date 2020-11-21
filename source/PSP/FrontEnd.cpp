@@ -15,7 +15,6 @@
 #include "FrontEnd.h"
 #include <psprtc.h>
 #include <pspdisplay.h>
-#include "glib2d.h"
 
 #include "PSPDisplay.h"
 //#include "Version.h"
