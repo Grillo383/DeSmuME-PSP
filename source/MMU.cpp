@@ -351,7 +351,7 @@ struct TVramBankInfo {
 	u8 page_addr, num_pages;
 };
 
-static const TVramBankInfo vram_bank_info[VRAM_BANKS] = {
+static const TVramBankInfo vram_bank_info[VRAM_BANK_COUNT] = {
 	{0,8},
 	{8,8},
 	{16,8},
@@ -381,7 +381,7 @@ static FORCEINLINE u32 MMU_LCDmap(u32 addr, bool& unmapped, bool& restricted)
 {
 	unmapped = false;
 	restricted = false; //this will track whether 8bit writes are allowed
-	
+
 	//handle SIWRAM and non-shared IWRAM in here too, since it is quite similar to vram.
 	//in fact it is probably implemented with the same pieces of hardware.
 	//its sort of like arm7 non-shared IWRAM is lowest priority, and then SIWRAM goes on top.
@@ -531,7 +531,7 @@ std::string VramConfiguration::describePurpose(Purpose p) {
 
 std::string VramConfiguration::describe() {
 	std::stringstream ret;
-	for(int i=0;i<VRAM_BANKS;i++) {
+	for(int i=0;i< VRAM_BANK_COUNT;i++) {
 		ret << (char)(i+'A') << ": " << banks[i].ofs << " " << describePurpose(banks[i].purpose) << std::endl;
 	}
 	return ret.str();
@@ -562,11 +562,10 @@ static inline u8* MMU_vram_physical(const int page)
 	return MMU.ARM9_LCD + (page*ADDRESS_STEP_16KB);
 }
 
-//todo - templateize
-static inline void MMU_VRAMmapRefreshBank(const int bank)
+template <VRAMBankID  bank>
+static inline void MMU_VRAMmapRefreshBank()
 {
-	int block = bank;
-	if(bank >= VRAM_BANK_H) block++;
+	const size_t block = (bank >= VRAM_BANK_H) ? bank + 1 : bank;
 
 	u8 VRAMBankCnt = T1ReadByte(MMU.MMU_MEM[ARMCPU_ARM9][0x40], 0x240 + block);
 	
@@ -848,6 +847,9 @@ static inline void MMU_VRAMmapControl(u8 block, u8 VRAMBankCnt)
 		return;
 	}
 
+	//sceKernelDcacheWritebackInvalidateAll();
+	//if (FrameRendered <= 0) return; //ME hasn't finished to render so skip 
+
 	//first, save the texture info so we can check it for changes and trigger purges of the texcache
 	MMU_struct::TextureInfo oldTexInfo = MMU.texInfo;
 
@@ -869,20 +871,20 @@ static inline void MMU_VRAMmapControl(u8 block, u8 VRAMBankCnt)
 	//goblet of fire "care of magical creatures" maps I and D to BOBJ (the I is an accident)
 	//and requires A to override it.
 	//This may create other bugs....
-	MMU_VRAMmapRefreshBank(VRAM_BANK_I);
-	MMU_VRAMmapRefreshBank(VRAM_BANK_H);
-	MMU_VRAMmapRefreshBank(VRAM_BANK_G);
-	MMU_VRAMmapRefreshBank(VRAM_BANK_F);
-	MMU_VRAMmapRefreshBank(VRAM_BANK_E);
+	MMU_VRAMmapRefreshBank<VRAM_BANK_I>();
+	MMU_VRAMmapRefreshBank<VRAM_BANK_H>();
+	MMU_VRAMmapRefreshBank<VRAM_BANK_G>();
+	MMU_VRAMmapRefreshBank<VRAM_BANK_F>();
+	MMU_VRAMmapRefreshBank<VRAM_BANK_E>();
 
 	//zero 21-jun-2012
 	//tomwi's streaming music demo sets A and D to ABG (the A is an accident).
 	//in this case, D should get priority. 
 	//this is somewhat risky. will it break other things?
-	MMU_VRAMmapRefreshBank(VRAM_BANK_A);
-	MMU_VRAMmapRefreshBank(VRAM_BANK_B);
-	MMU_VRAMmapRefreshBank(VRAM_BANK_C);
-	MMU_VRAMmapRefreshBank(VRAM_BANK_D);
+	MMU_VRAMmapRefreshBank<VRAM_BANK_A>();
+	MMU_VRAMmapRefreshBank<VRAM_BANK_B>();
+	MMU_VRAMmapRefreshBank<VRAM_BANK_C>();
+	MMU_VRAMmapRefreshBank<VRAM_BANK_D>();
 
 	//printf(vramConfiguration.describe().c_str());
 	//printf("vram remapped at vcount=%d\n",nds.VCount);
@@ -954,8 +956,6 @@ static inline void MMU_VRAMmapControl(u8 block, u8 VRAMBankCnt)
 //end vram
 //////////////////////////////////////////////////////////////
 
-
-
 void MMU_Init(void)
 {
 	//Alloc the Volatile memory
@@ -971,6 +971,13 @@ void MMU_Init(void)
 		inVolatileAssigned = 1;
 	}
 	*/
+
+	//Use scratchPad mem
+	/*MMU.ARM9_VMEM = (u8*)SCE_SCRATCHPAD_ADDR;
+	MMU.ARM9_OAM = (u8*)SCE_SCRATCHPAD_ADDR + 0x900;
+
+	memset(MMU.ARM9_VMEM, 0, 0x800);
+	memset(MMU.ARM9_OAM, 0, 0x800);*/
 
 	//LOG("MMU init\n");
 
@@ -1048,9 +1055,9 @@ void MMU_Reset()
 	memset(MMU.ARM9_DTCM, 0, sizeof(MMU.ARM9_DTCM));
 	memset(MMU.ARM9_ITCM, 0, sizeof(MMU.ARM9_ITCM));
 	memset(MMU.ARM9_LCD,  0, sizeof(MMU.ARM9_LCD));
-	memset(MMU.ARM9_OAM,  0, sizeof(MMU.ARM9_OAM));
+	memset(MMU.ARM9_OAM,  0, 0x800);
 	memset(MMU.ARM9_REG,  0, sizeof(MMU.ARM9_REG));
-	memset(MMU.ARM9_VMEM, 0, sizeof(MMU.ARM9_VMEM));
+	memset(MMU.ARM9_VMEM, 0, 0x800);
 	
 	memset(MMU.blank_memory,  0, sizeof(MMU.blank_memory));
 	memset(MMU.UNUSED_RAM,    0, sizeof(MMU.UNUSED_RAM));
@@ -1149,7 +1156,6 @@ void SetupMMU(bool debugConsole, bool dsi) {
 
 
 std::map<u64, u32> cached_sqrt;
-std::map<u64, bool> IScached_sqrt;
 
 static void execsqrt() {
 	u32 ret;
@@ -1158,27 +1164,21 @@ static void execsqrt() {
 
 	if (mode) { 
 		const u64 v = T1ReadQuad(MMU.MMU_MEM[ARMCPU_ARM9][0x40], 0x2B8);
-		const bool cached = IScached_sqrt[v];
+		ret = cached_sqrt[v];
 
-		if (!cached) {
+		if (!ret && v != 0) {
 			ret = isqrt(v);
 			cached_sqrt[v] = ret;
-			IScached_sqrt[v] = true;
-		}
-		else {
-			ret = cached_sqrt[v];
 		}
 
 	} else {
 		const u32 v = T1ReadLong(MMU.MMU_MEM[ARMCPU_ARM9][0x40], 0x2B8);
-		const bool cached = IScached_sqrt[v];
+		ret = cached_sqrt[v];
 
-		if (!cached){
+		if (!ret && v != 0){
 			ret = (int)sceFpuSqrt((float)v);
 			cached_sqrt[v] = ret;
-			IScached_sqrt[v] = true;
-		}else
-			ret = cached_sqrt[v];
+		}
 	}
 
 	//clear the result while the sqrt unit is busy
@@ -1191,7 +1191,7 @@ static void execsqrt() {
 	NDS_Reschedule();
 }
 
-std::map<std::string, s64> cached_div;
+/*std::map<std::string, s64> cached_div;
 std::map<std::string, bool> IScached_div;
 
 void itoa(long long int value, char* result) {
@@ -1225,7 +1225,7 @@ char* mystrcat(char* dest, char* src)
 	while (*dest) dest++;
 	while (*dest++ = *src++);
 	return --dest;
-}
+}*/
 
 static void execdiv() {
 
@@ -1268,7 +1268,7 @@ static void execdiv() {
 	}
 	else
 	{
-		char _strIndex[64];
+		/*char _strIndex[64];
 		_strIndex[0] = '\0';
 		char* pStr = _strIndex;
 		char _tmp[8];
@@ -1285,8 +1285,8 @@ static void execdiv() {
 		}
 		else {
 			res = cached_div[_strIndex];
-		}
-		
+		}*/
+		res = num / den;
 		mod = num % den;
 	}
 
@@ -1504,7 +1504,7 @@ void FASTCALL MMU_writeToGCControl(u32 val)
 	//the command is transferred to the GC during the next 8 clocks
 	if(start)
 	{
-		GCLOG("[GC] command:"); rawcmd.print();
+		//GCLOG("[GC] command:"); rawcmd.print();
 		slot1_device->write_command(PROCNUM, rawcmd);
 
 		/*INFO("WRITE: %02X%02X%02X%02X%02X%02X%02X%02X ", 
@@ -2427,6 +2427,10 @@ void DmaController::exec()
 
 	//printf("ARM%c DMA%d execute, count %08X, mode %d%s\n", procnum?'7':'9', chan, wordcount, startmode, running?" - RUNNING":"");
 	//we'll need to unfreeze the arm9 bus now
+
+	//Process input during frameskip to reduce overhead
+	
+
 	if(procnum==ARMCPU_ARM9) nds.freezeBus &= ~(1<<(chan+1));
 
 	dmaCheck = FALSE;
@@ -2549,6 +2553,9 @@ void DmaController::doCopy()
 	//outside the loop
 	int time_elapsed = 0;
 	if(sz==4) {
+
+		//time_elapsed = (_MMU_accesstime<PROCNUM, MMU_AT_DMA, 32, MMU_AD_READ, TRUE>(src, true) + _MMU_accesstime<PROCNUM, MMU_AT_DMA, 32, MMU_AD_WRITE, TRUE>(dst, true)) * todo;
+
 		for(s32 i=(s32)todo; i>0; i--)
 		{
 			time_elapsed += _MMU_accesstime<PROCNUM,MMU_AT_DMA,32,MMU_AD_READ,TRUE>(src,true);
@@ -2559,6 +2566,9 @@ void DmaController::doCopy()
 			src += srcinc;
 		}
 	} else {
+
+		//time_elapsed = (_MMU_accesstime<PROCNUM, MMU_AT_DMA, 16, MMU_AD_READ, TRUE>(src, true) + _MMU_accesstime<PROCNUM, MMU_AT_DMA, 16, MMU_AD_WRITE, TRUE>(dst, true)) * todo;
+
 		for(s32 i=(s32)todo; i>0; i--)
 		{
 			time_elapsed += _MMU_accesstime<PROCNUM,MMU_AT_DMA,16,MMU_AD_READ,TRUE>(src,true);
@@ -4972,16 +4982,19 @@ void FASTCALL _MMU_ARM7_write08(u32 adr, u8 val)
 
 	mmu_log_debug_ARM7(adr, "(write08) 0x%02X", val);
 
+
 	if (adr < 0x02000000) return; //can't write to bios or entire area below main memory
 
 	if (slot2_write<ARMCPU_ARM7, u8>(adr, val))
 		return;
 
-	/*if (SPU_core->isSPU(adr))
+	if (SPU_core->isSPU(adr))
 	{
-		SPU_WriteByte(adr, val);
+		if (my_config.enable_sound)
+			SPU_WriteByte(adr, val);
+
 		return;
-	}*/
+	}
 
 	if ((adr & 0xFFFF0000) == 0x04800000)
 	{
@@ -5039,11 +5052,13 @@ void FASTCALL _MMU_ARM7_write08(u32 adr, u8 val)
 
 			case REG_AUXSPICNT:
 			case REG_AUXSPICNT+1:
+				//if (my_config.D_ARM7) return;
 				write_auxspicnt(ARMCPU_ARM7, 8, adr & 1, val);
 				return;
 
 			case REG_AUXSPIDATA:
 			{
+				//if (my_config.D_ARM7) return;
 				//if(val!=0) MMU.AUX_SPI_CMD = val & 0xFF; //zero 20-aug-2013 - this seems pointless
 				u8 spidata = slot1_device->auxspi_transaction(ARMCPU_ARM7,(u8)val);
 				T1WriteWord(MMU.MMU_MEM[ARMCPU_ARM7][(REG_AUXSPIDATA >> 20) & 0xff], REG_AUXSPIDATA & 0xfff, spidata);
@@ -5054,6 +5069,7 @@ void FASTCALL _MMU_ARM7_write08(u32 adr, u8 val)
 			case REG_SPIDATA:
 				// CrazyMax: 27 May 2013: BIOS write 8bit commands to flash controller when load firmware header 
 				// into RAM at 0x027FF830
+				//if (my_config.D_ARM7) return;
 				MMU_writeToSPIData(val);
 				return;
 		}
@@ -5086,11 +5102,13 @@ void FASTCALL _MMU_ARM7_write16(u32 adr, u16 val)
 	if (slot2_write<ARMCPU_ARM7, u16>(adr, val))
 		return;
 
-	/*if (SPU_core->isSPU(adr))
+	if (SPU_core->isSPU(adr))
 	{
-		SPU_WriteWord(adr, val);
+		if (my_config.enable_sound)
+			SPU_WriteWord(adr, val);
+
 		return;
-	}*/
+	}
 
 	//wifi mac access
 	if ((adr & 0xFFFF0000) == 0x04800000)
@@ -5128,6 +5146,7 @@ void FASTCALL _MMU_ARM7_write16(u32 adr, u16 val)
 
 			case REG_EXMEMCNT:
 			{
+				//if (my_config.D_ARM7) return;
 				u16 remote_proc = T1ReadWord(MMU.MMU_MEM[ARMCPU_ARM9][0x40], 0x204);
 				T1WriteWord(MMU.MMU_MEM[ARMCPU_ARM7][0x40], 0x204, (val & 0x7F) | (remote_proc & 0xFF80));
 			}
@@ -5146,11 +5165,13 @@ void FASTCALL _MMU_ARM7_write16(u32 adr, u16 val)
 
 
 			case REG_AUXSPICNT:
+				//if (my_config.D_ARM7) return;
 				write_auxspicnt(ARMCPU_ARM7, 16, 0, val);
 			return;
 
 			case REG_AUXSPIDATA:
 			{
+				//if (my_config.D_ARM7) return;
 				//if(val!=0) MMU.AUX_SPI_CMD = val & 0xFF; //zero 20-aug-2013 - this seems pointless
 				u8 spidata = slot1_device->auxspi_transaction(ARMCPU_ARM7,(u8)val);
 				T1WriteWord(MMU.MMU_MEM[ARMCPU_ARM7][(REG_AUXSPIDATA >> 20) & 0xff], REG_AUXSPIDATA & 0xfff, spidata);
@@ -5160,6 +5181,7 @@ void FASTCALL _MMU_ARM7_write16(u32 adr, u16 val)
 
 			case REG_SPICNT :
 				{
+				//if (my_config.D_ARM7) return;
 					int reset_firmware = 1;
 
 					if ( ((MMU.SPI_CNT >> 8) & 0x3) == 1) 
@@ -5187,6 +5209,7 @@ void FASTCALL _MMU_ARM7_write16(u32 adr, u16 val)
 				return;
 				
 			case REG_SPIDATA :
+				//if (my_config.D_ARM7) return;
 				MMU_writeToSPIData(val);
 				return;
 
@@ -5258,60 +5281,32 @@ void FASTCALL _MMU_ARM7_write16(u32 adr, u16 val)
 	T1WriteWord(MMU.MMU_MEM[ARMCPU_ARM7][adr>>20], adr&MMU.MMU_MASK[ARMCPU_ARM7][adr>>20], val);
 }
 
-extern int debuga;
 
 //================================================= MMU ARM7 write 32
 void FASTCALL _MMU_ARM7_write32(u32 adr, u32 val)
 {
-	if(debuga)
-		vdDejaLog(" ENTRA-WRITE ");
 
 	adr &= 0x0FFFFFFC;
 
-	if(debuga)
-		vdDejaLog(" LOG-debug ");
-
 	mmu_log_debug_ARM7(adr, "(write32) 0x%08X", val);
 
-	if(debuga)
-		vdDejaLog(" IFA ");
-
-
 	if (adr < 0x02000000) return; //can't write to bios or entire area below main memory
-
-	if(debuga)
-		vdDejaLog(" IF-slot ");
 
 
 	if (slot2_write<ARMCPU_ARM7, u32>(adr, val))
 		return;
 
-	/*if(debuga)
-		vdDejaLog(" if-sPU ");
-
-
 	if (SPU_core->isSPU(adr))
 	{
-		if(debuga)
-		vdDejaLog(" WRITELONGG ");
-
-		SPU_WriteLong(adr, val);
-
-		if(debuga)
-		vdDejaLog(" returnooo ");
+		if (my_config.enable_sound)
+			SPU_WriteLong(adr, val);
 
 		return;
 	}
 
-	if(debuga)
-		vdDejaLog(" otro-if ");*/
-
 
 	if ((adr & 0xFFFF0000) == 0x04800000)
 	{
-		if(debuga)
-			vdDejaLog(" wifiii ");
-
 
 		WIFI_write16(adr, val & 0xFFFF);
 		WIFI_write16(adr+2, val >> 16);
@@ -5319,40 +5314,25 @@ void FASTCALL _MMU_ARM7_write32(u32 adr, u32 val)
 		return;
 	}
 
-	if(debuga)
-		vdDejaLog(" if-regg ");
 
 	// Address is an IO register
 	if ((adr >> 24) == 4)
 	{
-		if(debuga)
-			vdDejaLog(" si-reg ");
-
 
 		if (!validateIORegsWrite<ARMCPU_ARM7>(adr, 32, val)) return;
 
-		if(debuga)
-			vdDejaLog(" if-dma ");
 
 		if(MMU_new.is_dma(adr)) { MMU_new.write_dma(ARMCPU_ARM7,32,adr,val); return; }
-
-		if(debuga)
-			vdDejaLog(" switch ");
 
 		switch(adr)
 		{
 			case REG_RTC:
-
-				if(debuga)
-					vdDejaLog(" RTC ");
+				//if (my_config.D_ARM7) return;
 
 				rtcWrite((u16)val);
 				break;
 
 			case REG_IME : 
-
-				if(debuga)
-					vdDejaLog(" IME ");
 
 				NDS_Reschedule();
 				MMU.reg_IME[ARMCPU_ARM7] = val & 0x01;
@@ -5360,10 +5340,6 @@ void FASTCALL _MMU_ARM7_write32(u32 adr, u32 val)
 				return;
 				
 			case REG_IE :
-
-				if(debuga)
-					vdDejaLog(" IE ");
-
 				NDS_Reschedule();
 				MMU.reg_IE[ARMCPU_ARM7] = val;
 				return;
@@ -5375,9 +5351,6 @@ void FASTCALL _MMU_ARM7_write32(u32 adr, u32 val)
             case REG_TM2CNTL:
             case REG_TM3CNTL:
 			{
-				if(debuga)
-					vdDejaLog(" TM ");
-
 				int timerIndex = (adr>>2)&0x3;
 				MMU.timerReload[ARMCPU_ARM7][timerIndex] = (u16)val;
 				T1WriteWord(MMU.MMU_MEM[ARMCPU_ARM7][0x40], adr & 0xFFF, val);
@@ -5388,64 +5361,34 @@ void FASTCALL _MMU_ARM7_write32(u32 adr, u32 val)
 
 			case REG_IPCSYNC:
 
-				if(debuga)
-					vdDejaLog(" IPCSYNC ");
-
 				MMU_IPCSync(ARMCPU_ARM7, val);
 				return;
 			case REG_IPCFIFOCNT:
-
-				if(debuga)
-					vdDejaLog(" FOCNT ");
-
-
 				IPC_FIFOcnt(ARMCPU_ARM7, val);
 				return;
 			case REG_IPCFIFOSEND:
-
-				if(debuga)
-					vdDejaLog(" SEND ");
-
 
 				IPC_FIFOsend(ARMCPU_ARM7, val);
 				return;
 			
 			case REG_GCROMCTRL :
 
-				if(debuga)
-					vdDejaLog(" ROMCTRL ");
-
-
 				MMU_writeToGCControl<ARMCPU_ARM7>(val);
 				return;
 
 			case REG_GCDATAIN:
 
-				if(debuga)
-					vdDejaLog(" DATAIN ");
-
-
 				MMU_writeToGC<ARMCPU_ARM7>(val);
 				return;
 		}
-
-		if(debuga)
-			vdDejaLog(" T1writelongggg ");
 
 		T1WriteLong(MMU.MMU_MEM[ARMCPU_ARM7][adr>>20], adr & MMU.MMU_MASK[ARMCPU_ARM7][adr>>20], val);
 		return;
 	}
 
-	if(debuga)
-		vdDejaLog(" BOOL ");
-
 	bool unmapped, restricted;
 	adr = MMU_LCDmap<ARMCPU_ARM7>(adr,unmapped, restricted);
 	
-	
-	if(debuga)
-		vdDejaLog(" if-unmaped ");
-
 	if(unmapped) return;
 
 #ifdef HAVE_JIT
@@ -5491,10 +5434,10 @@ u8 FASTCALL _MMU_ARM7_read08(u32 adr)
 	if (slot2_read<ARMCPU_ARM7, u8>(adr, slot2_val))
 		return slot2_val;
 
-	/*if (SPU_core->isSPU(adr))
+	if (SPU_core->isSPU(adr))
 	{
 		return SPU_ReadByte(adr);
-	}*/
+	}
 
 	// Address is an IO register
 	if ((adr >> 24) == 4)
@@ -5547,10 +5490,10 @@ u16 FASTCALL _MMU_ARM7_read16(u32 adr)
 	if (slot2_read<ARMCPU_ARM7, u16>(adr, slot2_val))
 		return slot2_val;
 
-   /* if (SPU_core->isSPU(adr))
+    if (SPU_core->isSPU(adr))
     {
         return SPU_ReadWord(adr);
-    }*/
+    }
 
 	// Address is an IO register
 	if ((adr >> 24) == 4)
@@ -5647,10 +5590,10 @@ u32 FASTCALL _MMU_ARM7_read32(u32 adr)
 	if (slot2_read<ARMCPU_ARM7, u32>(adr, slot2_val))
 		return slot2_val;
 
-    /*if (SPU_core->isSPU(adr))
+    if (SPU_core->isSPU(adr))
     {
         return SPU_ReadLong(adr);
-    }*/
+    }
 
 	// Address is an IO register
 	if ((adr >> 24) == 4)

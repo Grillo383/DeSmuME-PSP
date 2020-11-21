@@ -679,59 +679,12 @@ void gfx3d_reset()
 //=================================================================================
 //=================================================================================
 
-s64 fx32_mulPSP(const u32 a, const u32 b) {
-
-	union {
-		s32 h[2];
-		s64 result;
-	};
-
-	__asm__ volatile (
-		"mult   %1, %2\n"
-		"mfhi %0\n"
-		"mflo %3\n"
-		: "=r"(h[0]) : "r"(a), "r"(b), "r"(h[1]));
-
-	//result = ((s64)hi << 32) | ((s64)lo & 0xffffffff);
-	return result;
-}
-/*
 
 inline float vec3dot(float* a, float* b) {
-	return sceFpuMul(a[0],b[0]) + sceFpuMul(a[1],b[1]) + sceFpuMul(a[2], b[2]);
-}
-
-FORCEINLINE s32 mul_fixed32(s32 a, s32 b)
-{
-	return fx32_shiftdown(fx32_mulPSP(a,b));
-}
-
-FORCEINLINE s32 vec3dot_fixed32(const s32* a, const s32* b) {
-	return fx32_shiftdown(fx32_mul(a[0],b[0]) + fx32_mul(a[1],b[1]) + fx32_mul(a[2],b[2]));
-}*/
-
-inline float vec3dot(float* a, float* b) {
-	float result = 0;
-	__asm__ volatile (
-		"ulv.q	C000, %1		\n"			
-		"ulv.q	C100, %2		\n"			
-
-		"vmul.t C200, C000, C100\n"
-
-		"vadd.s S000, S000, S200\n"
-		"vadd.s S000, S000, S201\n"
-		"vadd.s S000, S000, S202\n"
-		"vadd.s S000, S000, S203\n"
-
-		"mfv	%0, S000\n"
-		: "=r"(result) : "m"(*a), "m"(*b));
-	return result;//(((a[0]) * (b[0])) + ((a[1]) * (b[1])) + ((a[2]) * (b[2])));
+	return (((a[0]) * (b[0])) + ((a[1]) * (b[1])) + ((a[2]) * (b[2])));
 }
 
 #define SUBMITVERTEX(ii, nn) polylist->list[polylist->count].vertIndexes[ii] = tempVertInfo.map[nn];
-
-/*std::map<s32, s32> cached_S;
-std::map<s32, s32> cached_T;*/
 
 //Submit a vertex to the GE
 static void SetVertex()
@@ -1358,11 +1311,6 @@ static void gfx3d_glNormal(u32 v)
 
 static void gfx3d_glTexCoord(u32 val)
 {
-
-//	sceKernelDcacheWritebackInvalidateAll();
-
-	//if (my_config.Dspr3D) return;
-
 	_t = (s16)(val >> 16);
 	_s = (s16)(val & 0xFFFF);
 
@@ -2193,7 +2141,7 @@ static bool HasTo_ogfx3d_execute(u8 cmd, u32 param)
 		return true;
 		break;
 	case 0x2A:		// TEXIMAGE_PARAM - Set Texture Parameters (W)
-		return false;
+		return true;
 		break;
 	case 0x2B:		// PLTT_BASE - Set Texture Palette Base Address (W)
 		return true;

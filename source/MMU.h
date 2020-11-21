@@ -44,6 +44,21 @@ class EMUFILE;
 
 typedef const u8 TWaitState;
 
+enum VRAMBankID
+{
+	VRAM_BANK_A = 0,
+	VRAM_BANK_B = 1,
+	VRAM_BANK_C = 2,
+	VRAM_BANK_D = 3,
+	VRAM_BANK_E = 4,
+	VRAM_BANK_F = 5,
+	VRAM_BANK_G = 6,
+	VRAM_BANK_H = 7,
+	VRAM_BANK_I = 8,
+
+	VRAM_BANK_COUNT = 9
+};
+
 enum EDMAMode
 {
 	EDMAMode_Immediate = 0,
@@ -404,6 +419,7 @@ struct MMU_struct
 	u8* ExtPal[2][4];
 	u8* ObjExtPal[2][2];
 
+	//u8* ARM9_OAM;
 	u8 ARM9_OAM[0x800];
 
 	//ARM9 mem
@@ -415,6 +431,7 @@ struct MMU_struct
 
 	u8 ARM9_BIOS[0x8000];
 	u8 ARM9_VMEM[0x800];
+	//u8* ARM9_VMEM;
 
 	//ARM7 mem
 	u8 ARM7_BIOS[0x4000];
@@ -532,6 +549,7 @@ extern const armcpu_memory_iface arm9_base_memory_iface;
 extern const armcpu_memory_iface arm7_base_memory_iface;
 extern const armcpu_memory_iface arm9_direct_memory_iface;
 
+/*
 #define VRAM_BANKS 9
 #define VRAM_BANK_A 0
 #define VRAM_BANK_B 1
@@ -541,7 +559,7 @@ extern const armcpu_memory_iface arm9_direct_memory_iface;
 #define VRAM_BANK_F 5
 #define VRAM_BANK_G 6
 #define VRAM_BANK_H 7
-#define VRAM_BANK_I 8
+#define VRAM_BANK_I 8*/
 
 #define VRAM_PAGE_ABG 0
 #define VRAM_PAGE_BBG 128
@@ -558,10 +576,10 @@ struct VramConfiguration {
 	struct BankInfo {
 		Purpose purpose;
 		int ofs;
-	} banks[VRAM_BANKS];
+	} banks[VRAM_BANK_COUNT];
 	
 	inline void clear() {
-		for(int i=0;i<VRAM_BANKS;i++) {
+		for(int i=0;i< VRAM_BANK_COUNT;i++) {
 			banks[i].ofs = 0;
 			banks[i].purpose = OFF;
 		}

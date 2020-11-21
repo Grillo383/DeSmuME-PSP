@@ -63,6 +63,8 @@ public:
 	u32 texformat, texpal;
 	u32 sizeX, sizeY;
 
+	u16 bufferWidth;
+
 	float invSizeX, invSizeY;
 
 	u64 texid; //used by ogl renderer for the texid

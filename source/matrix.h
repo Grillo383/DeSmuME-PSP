@@ -301,6 +301,8 @@ static FORCEINLINE void memset_u8(void* _dst, u8 val)
 void MatrixMultVec4x4(const float* matrix, float* vecPtr);
 void MatrixMultVec3x3(const float* matrix, float* vecPtr);
 void MatrixMultiply(float* matrix, const float* rightMatrix);
+void MatrixDivide4X4(float* matrix, float div);
+void MatrixDivide3X3(float* matrix, float div);
 void MatrixTranslate(float* matrix, const float* ptr);
 void MatrixScale(float* matrix, const float* ptr);
 
@@ -311,59 +313,6 @@ FORCEINLINE void MatrixMultVec4x4_M2(const float* matrix, float* vecPtr)
 	MatrixMultVec4x4(matrix, vecPtr);
 }
 
-template<int NUM_ROWS>
-FORCEINLINE void vector_fix2float(float* matrix, const float divisor)
-{
-	for (int i = 0;i < NUM_ROWS * 4;i++)
-		matrix[i] /= divisor;
-	/*
-	switch (NUM_ROWS)
-	{
-
-	case 4:
-
-		__asm__ volatile (
-			"mtv	    %0, C000			 \n"
-			"mtv	    %1, C010			 \n"
-			"mtv	    %2, C020			 \n"
-			"mtv	    %3, C030			 \n"
-			"mtv	    %4, S000			 \n"
-			"vdiv.q 	C000, C000, S000	 \n"
-			"mfv		%0, C000			 \n"
-			"vdiv.q 	C010, C010, S000	 \n"
-			"mfv		%1, C010			 \n"
-			"vdiv.q 	C000, C020, S000	 \n"
-			"mfv		%2, C020			 \n"
-			"vdiv.q 	C000, C030, S000	 \n"
-			"mfv		%3, C030			 \n"
-			:"=r"(*matrix) : "r"(*matrix + 16), "r"(*matrix + 32), "r"(*matrix + 48), "r"(divisor));
-
-		break;
-
-	case 3:
-
-		__asm__ volatile (
-			"lv.q       C000, %0			 \n"
-			"lv.q       C010, %1			 \n"
-			"lv.q       C020, %2			 \n"
-			"mtv	    %3, S000			 \n"
-			"vdiv.q 	C000, C000, S000	 \n"
-			"mfv		%0, C000			 \n"
-			"vdiv.q 	C010, C010, S000	 \n"
-			"mfv		%1, C010			 \n"
-			"vdiv.q 	C000, C020, S000	 \n"
-			"mfv		%2, C020			 \n"
-			:"=r"(*matrix) : "r"(*matrix + 16), "r"(*matrix + 32), "r"(divisor));
-
-		break;
-
-	default:
-		for (int i = 0;i < NUM_ROWS * 4;i++)
-			matrix[i] /= divisor;
-		break;
-	}*/
-	
-}
 
 template<int NUM>
 #ifdef _XBOX

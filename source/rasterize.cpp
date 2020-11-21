@@ -281,8 +281,6 @@ public:
 
 		const size_t polyCount = engine->polylist->count;
 
-		if (polyCount <= 0) return;
-
 		sceGuStart(GU_DIRECT, gulist);
 
 		sceGuEnable(GU_CLIP_PLANES);
@@ -306,14 +304,14 @@ public:
 
 		sceGuDrawBufferList(GU_PSM_8888, (void*)renderTarget, 256);
 
-		sceGuScissor(0, 0, 256, 192);
-		sceGuEnable(GU_SCISSOR_TEST);
-
 		sceGuClearColor(0);
 		sceGuClearDepth(0);
 		sceGuClearStencil(0);
 
 		sceGuClear(GU_COLOR_BUFFER_BIT | GU_DEPTH_BUFFER_BIT | GU_STENCIL_BUFFER_BIT);
+		
+		sceGuScissor(0, 0, 256, 192);
+		sceGuEnable(GU_SCISSOR_TEST);
 
 		static const int GUPrimitiveType[] = { GU_TRIANGLES , GU_TRIANGLE_FAN , GU_TRIANGLES , GU_TRIANGLE_FAN , GU_LINE_STRIP, GU_LINE_STRIP,GU_LINE_STRIP,GU_LINE_STRIP };
 
@@ -345,7 +343,7 @@ public:
 			int VertSZ = sz[poly.vtxFormat];
 
 
-			//OPTIMIZE THIS PIECE OF SHI.."ART"
+			//OPTIMIZE THIS 
 			for (int j = vertStartIndex, VertPolyIndex = 0; j < VertSZ + vertStartIndex; ++j) {
 
 				const VERT& vert = engine->vertlist->list[poly.vertIndexes[VertPolyIndex++]];
@@ -385,13 +383,14 @@ public:
 				__asm__ volatile(
 					".set			push\n"					// save assember option
 					".set			noreorder\n"			// suppress reordering
-					"ulv.q			c100, 0 + %0\n"
-					"ulv.q			c200, 0 + %1\n"
+					"lv.q			c100, 0 + %2\n"
+					"lv.q			c200, 0 + %1\n"
 					"vdiv.q		    c000, c100, c200\n"
-					"usv.q			c000, 0 + %0\n"
+					"sv.q			c000, 0 + %0\n"
 					".set			pop\n"					// restore assember option
-					: "+m"(*vect)
+					: "=m"(*vect)
 					: "m"(*Mul_vect)
+					, "m"(*vect)
 					: "memory"
 					);
 

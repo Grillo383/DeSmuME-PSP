@@ -16,11 +16,11 @@
 	along with the this software.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef SNDSDL_H
-#define SNDSDL_H
+#ifndef SNDPSP_H
+#define SNDPSP_H
 
 #include "SPU.h"
-#define SNDCORE_SDL 2
+#define SNDCORE_PSP 1
 
-extern int SNDSDL;
+extern SoundInterface_struct SNDPSP;
 #endif
