@@ -328,6 +328,7 @@ void SetupDisp_EMU() {
 
 #include "../rasterize.h"
 
+
 void EMU_SCREEN() {
 	sceDmacMemcpy(DISP_POINTER, (const void*)&GPU_Screen, sz_SCR);
 //	sceDmacMemcpy(DISP_POINTER, (const void*)&_screen, sz_SCR);

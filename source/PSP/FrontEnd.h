@@ -5,33 +5,31 @@
 class configured_features 
 {
 public:
-  int auto_pause;
-  int frameskip;
 
-  //int engine_3d;
-  int savetype;
+	bool enable_sound;
+	bool showfps;
+	bool Disable_3D_calc;
+	bool D_ARM7;
+	bool swap;
+	bool cur;
+	bool Render3D;
+	bool fps_cap;
 
-  int fps_cap_num;
+	bool half3D;
 
-  int firmware_language;
+	bool Dspr3D;
+	//bool _3dScaleFix;
 
-  int Render3DCore;
+	bool gpuLayerEnabled[2][5];
 
-  bool enable_sound;
-
-  bool showfps;
-
-  bool swap;
-
-  bool cur;
-
-  bool Render3D;
-
-  bool fps_cap;
-
-  bool UseExtFirmware;
-
-  bool RenderBack;
+	int auto_pause;
+	int frameskip;
+	int savetype;
+	int hide_screen;
+	int fps_cap_num;
+	int firmware_language;
+	bool PerFectVTiming;
+	bool ARM_ME;
 };
 
 typedef struct configparm {
@@ -48,24 +46,20 @@ typedef struct flist {
 	int cnt;
 }f_list;
 
-
 extern configured_features my_config;
 
 extern void ChangeRom(bool reset);
 extern void ResetRom();
 extern void EMU_Conf();
+void InitDisplayParams(configured_features* params);
+void EXEC_NDS();
+
+void DrawTouchPointer();
 
 void DoConfig(configured_features * params);
 
 void DSEmuGui(char *path,char *out);
 
-/*
-inline UDMAC_MEMCPY(u32* src, u32* dst, u16 size) {
-	union {
-		u32 val[size];
-		u64 val[size/2];
-	};
-   
-}*/
+void WriteLog(char* msg);
 
 #endif

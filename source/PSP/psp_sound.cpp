@@ -27,6 +27,8 @@
 static int sound_ready;
 volatile int sound_stop = 0;
 
+volatile bool UseME = true;
+
 pl_snd_channel_info sound_stream[AUDIO_CHANNELS];
 
 static int channel_thread(unsigned int args, void *argp);
@@ -54,7 +56,7 @@ int pl_snd_init(int sample_count,
     ch_info->right_vol = VOLUME_MAX;
     ch_info->callback = NULL;
     ch_info->user_data = NULL;
-    ch_info->paused = 1;
+    ch_info->paused = 0;
     ch_info->stereo = stereo;
 
     for (j = 0; j < 2; j++)
@@ -114,6 +116,10 @@ int pl_snd_init(int sample_count,
   }
 
   sound_ready = 1;
+
+  UseME = false;//InitialiseJobManager();
+
+  if (UseME) return 0;
   
   char label[16];
   strcpy(label, "audiotX");
@@ -168,8 +174,6 @@ void pl_snd_shutdown()
   sound_ready = 0;
   sound_stop = 1;
 
-  printf("FAILED\n");
-
   for (i = 0; i < AUDIO_CHANNELS; i++)
   {
     if (sound_stream[i].thread_handle != -1)
@@ -199,34 +203,10 @@ static inline int play_blocking(unsigned int channel,
                                 void *buf)
 {
   if (!sound_ready) return -1;
-  if (channel >= AUDIO_CHANNELS) return -1;
+  //if (channel >= AUDIO_CHANNELS) return -1;
 
   return sceAudioOutputPannedBlocking(sound_stream[channel].sound_ch_handle,
     vol1, vol2, buf);
-}
-
-void Play_sound(int channel)
-{
-    static int bufidx = 0;
-
-    pl_snd_channel_info* ch_info = &sound_stream[channel];
-
-    if (ch_info->paused) return;
- 
-    pl_snd_callback callback = ch_info->callback;
-    void* bufptr = ch_info->sample_buffer[bufidx];
-    unsigned int samples = ch_info->samples[bufidx];
-
-    callback(ch_info->user_data, static_cast<unsigned char*>(bufptr), samples);
-
-    /* Play sound */
-    play_blocking(channel,
-        ch_info->left_vol,
-        ch_info->right_vol,
-        bufptr);
-
-    /* Switch active buffer */
-   // bufidx = (bufidx ? 0 : 1);
 }
 
 static int channel_thread(unsigned int args, void *argp)
@@ -252,16 +232,17 @@ static int channel_thread(unsigned int args, void *argp)
     bufptr = ch_info->sample_buffer[bufidx];
     samples = ch_info->samples[bufidx];
 
-    if (callback && !ch_info->paused)
-      /* Use callback to fill buffer */
-      callback(ch_info->user_data,static_cast<unsigned char *>(bufptr), samples);
+    if (callback && !ch_info->paused) {
+        /* Use callback to fill buffer */
+        callback(ch_info->user_data, static_cast<unsigned char*>(bufptr), samples);        
+    }
     else
     {
       /* Fill buffer with silence */
-      if (ch_info->stereo)
+    //  if (ch_info->stereo)
         for (i = 0, ptr_s = (unsigned int* )bufptr; i < samples; i++) *(ptr_s++) = 0;
-      else 
-        for (i = 0, ptr_m = (unsigned short*)bufptr; i < samples; i++) *(ptr_m++) = 0;
+     /* else 
+        for (i = 0, ptr_m = (unsigned short*)bufptr; i < samples; i++) *(ptr_m++) = 0;*/
     }
 
     /* Play sound */
@@ -271,13 +252,61 @@ static int channel_thread(unsigned int args, void *argp)
                   bufptr);
 
     /* Switch active buffer */
-    bufidx = (bufidx ? 0 : 1);
+ //   bufidx = (bufidx ? 0 : 1);
   }
-
-  printf("WTF\n");
 
   sceKernelExitThread(0);
   return 0;
+}
+
+static int channel_thread(int* arg)
+{
+    volatile int bufidx = 0;
+    int channel = 0;
+    int i, j;
+    unsigned short* ptr_m;
+    unsigned int* ptr_s;
+    void* bufptr;
+    unsigned int samples;
+    pl_snd_callback callback;
+    pl_snd_channel_info* ch_info;
+
+    ch_info = &sound_stream[channel];
+    for (j = 0; j < 2; j++)
+        memset(ch_info->sample_buffer[j], 0,
+            ch_info->samples[j] * get_bytes_per_sample(channel));
+
+    while (!sound_stop)
+    {
+        callback = ch_info->callback;
+        bufptr = ch_info->sample_buffer[bufidx];
+        samples = ch_info->samples[bufidx];
+
+        if (callback && !ch_info->paused) {
+            /* Use callback to fill buffer */
+            callback(ch_info->user_data, static_cast<unsigned char*>(bufptr), samples);
+        }
+        else
+        {
+            /* Fill buffer with silence */
+            if (ch_info->stereo)
+                for (i = 0, ptr_s = (unsigned int*)bufptr; i < samples; i++) *(ptr_s++) = 0;
+            else
+                for (i = 0, ptr_m = (unsigned short*)bufptr; i < samples; i++) *(ptr_m++) = 0;
+        }
+
+        /* Play sound */
+        play_blocking(channel,
+            ch_info->left_vol,
+            ch_info->right_vol,
+            bufptr);
+
+        /* Switch active buffer */
+        bufidx = (bufidx ? 0 : 1);
+    }
+
+    sceKernelExitThread(0);
+    return 0;
 }
 
 static void free_buffers()
@@ -309,6 +338,12 @@ int pl_snd_set_callback(int channel,
   pci->callback = NULL;
   pci->user_data = userdata;
   pci->callback = callback;
+
+  if (UseME) {
+   /*   SJob * audio = new SJob();
+      audio->DoJob = &channel_thread;
+      gJobManager.AddJob(audio,sizeof(audio));*/
+  }
 
   return 1;
 }

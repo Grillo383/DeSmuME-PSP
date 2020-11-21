@@ -1,27 +1,26 @@
 #ifndef FPU_PSP_H
 #define FPU_PSP_H
 
-float sceFpuRsqrt(float fs);
+#include "../types.h"
 
 static float sceFpuSqrt(float x) {
 	float result;
-	__asm__ volatile (
-		"mtv     %1, S000\n"
-		"vsqrt.s S000, S000\n"
-		"mfv     %0, S000\n"
-		: "=r"(result) : "r"(x));
+	__asm__(
+		"sqrt.s			%0, %1\n"
+		: "=f"(result)
+		: "f"(x)
+	);
 	return result;
 }
 
-static unsigned int sceFpuFloor(float x) {
-	unsigned int result;
-	__asm__ volatile (
-		"mtv     %1, S000\n"
-		"vf2id.s S000, S000, 0\n"
-		"vi2f.s S000, S000, 0\n"
-		"mfv     %0, S000\n"
-		: "=r"(result) : "r"(x));
-	return result;
-}
+void memcpy_vfpu(void* dst, const void* src, u32 size);
+void memcpy_vfpu_byteswap(void* dst, const void* src, u32 size);
+
+void sceVfpuMemset(void* dst, int c, unsigned int n);
+
+#define fast_memset 		sceVfpuMemset
+
+#define fast_memcpy 		memcpy_vfpu
+#define fast_memcpy_swizzle memcpy_vfpu_byteswap
 
 #endif
