@@ -2,7 +2,7 @@ TARGET = DesmumePSP
 
 MESS=1
 LSB_FIRST=1
-PSP_LARGE_MEMORY = 1
+PSP_LARGE_MEMORY = 0
 SRCDIR = ../source
 
 OBJS = $(SRCDIR)/arm_instructions.o \
@@ -90,7 +90,7 @@ CXX=psp-g++
 PSPSDK = $(shell psp-config --pspsdk-path)
 PSPDEV = $(shell psp-config -d)
 
-CFLAGS = -O2 -finline-functions -fno-rtti -ffast-math -fweb -fomit-frame-pointer  -G0 -Wall -D PSP -D NOSSE2 -D HAVE_LIBZ -funsigned-char -Wall \
+CFLAGS = -O2 -finline-functions -fno-rtti -ffast-math -fweb -fomit-frame-pointer  -G0 -Wall -D PSP -D NOSSE2 -D HAVE_LIBZ -D LOWRAM -funsigned-char -Wall \
                   -fstrict-aliasing -falign-functions=32 \
                   -falign-loops -falign-labels -falign-jumps -faligned-new
 
